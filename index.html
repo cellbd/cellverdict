@@ -1,0 +1,2924 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CellVerdict - Admin & CDR Lookup</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        emerald: {
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                            800: '#065f46',
+                        },
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            500: '#0284c7',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        },
+                        ash: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Turf.js for Azimuth Sector & Distance Calculations -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <!-- SheetJS for Excel CDR Parsing (.xlsx / .xls / .csv) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #map {
+            height: 520px;
+            width: 100%;
+            border-radius: 0.75rem;
+            z-index: 1;
+        }
+        .map-type-control {
+            position: absolute;
+            top: 12px;
+            left: 50px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 6px;
+            padding: 3px;
+            display: flex;
+            gap: 2px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            border: 1px solid #cbd5e1;
+        }
+        .dark .map-type-control {
+            background: rgba(30, 41, 59, 0.95);
+            border-color: #475569;
+        }
+        .map-type-btn {
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 4px;
+            color: #475569;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .dark .map-type-btn {
+            color: #cbd5e1;
+        }
+        .map-type-btn.active {
+            background-color: #0284c7;
+            color: #ffffff;
+        }
+        .cdr-subtab-btn {
+            color: #64748b;
+            background: transparent;
+        }
+        .cdr-subtab-btn:hover {
+            background-color: #f1f5f9;
+        }
+        .dark .cdr-subtab-btn {
+            color: #94a3b8;
+        }
+        .dark .cdr-subtab-btn:hover {
+            background-color: #334155;
+        }
+        .cdr-subtab-btn.active {
+            background-color: #059669;
+            color: #ffffff;
+        }
+        .distance-label {
+            background: rgba(15, 23, 42, 0.85);
+            color: #ffffff;
+            border: 1px solid #38bdf8;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .distance-label::before {
+            display: none;
+        }
+        .sector-body-label {
+            background: #0f172a;
+            color: #ffffff;
+            border: 1px solid #0284c7;
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .sector-body-label::before {
+            display: none;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            padding: 6px 10px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .leaflet-popup-content {
+            margin: 8px 12px;
+            line-height: 1.4;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .cell-popup-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 2px;
+        }
+        .cell-popup-details {
+            font-size: 13px;
+            color: #374151;
+            font-weight: 500;
+        }
+        .cell-popup-address {
+            font-size: 13px;
+            color: #4b5563;
+            margin-top: 2px;
+        }
+        .cell-popup-coords {
+            font-size: 13px;
+            color: #4b5563;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body class="bg-ash-100 dark:bg-slate-900 text-ash-700 dark:text-ash-200 flex flex-col md:flex-row min-h-screen transition-colors duration-200">
+
+    <!-- ===================== LOGIN OVERLAY ===================== -->
+    <!-- Shown until the visitor signs in with an email/password you created for them in Firebase. -->
+    <div id="login-overlay" style="display:flex;" class="fixed inset-0 z-[100] items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4">
+        <div class="w-full max-w-sm bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8">
+            <div class="text-center mb-6">
+                <div class="font-bold text-2xl text-ash-800 dark:text-white">CellVerdict</div>
+                <p class="text-sm text-ash-500 dark:text-ash-400 mt-1">শুধু অনুমোদিত ব্যবহারকারীদের জন্য</p>
+            </div>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Email</label>
+                    <input type="email" id="login-email" required autocomplete="username" placeholder="you@example.com" class="w-full bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-600">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Password</label>
+                    <input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" class="w-full bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-sky-600">
+                </div>
+                <div id="login-error" class="hidden text-sm text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2"></div>
+                <button type="submit" id="login-submit-btn" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2.5 rounded-lg transition">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Everything below stays hidden until login succeeds -->
+    <div id="app-shell" style="display:none;" class="contents">
+
+    <!-- Sidebar -->
+    <aside class="w-full md:w-64 bg-slate-50 dark:bg-slate-800 border-b md:border-b-0 md:border-r border-ash-200 dark:border-slate-700 flex flex-col justify-between p-4 shrink-0 shadow-sm">
+        <div>
+            <!-- Header / Logo -->
+            <div class="flex items-center justify-between mb-6 px-2 py-1">
+                <div class="flex items-center gap-3">
+                    <div class="relative w-10 h-10 shrink-0">
+                        <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-sm">
+                            <defs>
+                                <linearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#38bdf8"/>
+                                    <stop offset="100%" stop-color="#0284c7"/>
+                                </linearGradient>
+                                <linearGradient id="pinGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" stop-color="#ef4444"/>
+                                    <stop offset="100%" stop-color="#dc2626"/>
+                                </linearGradient>
+                            </defs>
+                            <circle cx="50" cy="50" r="42" fill="none" stroke="url(#skyGrad)" stroke-width="4" stroke-dasharray="210 50" stroke-dashoffset="30" />
+                            <path d="M 32 30 A 24 24 0 0 1 68 30" fill="none" stroke="url(#skyGrad)" stroke-width="3" stroke-linecap="round"/>
+                            <path d="M 38 36 A 16 16 0 0 1 62 36" fill="none" stroke="url(#skyGrad)" stroke-width="3" stroke-linecap="round"/>
+                            <path d="M 50 18 L 36 68 H 64 Z" fill="none" stroke="#0284c7" stroke-width="3.5" stroke-linejoin="round"/>
+                            <line x1="41" y1="50" x2="59" y2="50" stroke="#0284c7" stroke-width="2.5"/>
+                            <line x1="44" y1="38" x2="56" y2="38" stroke="#0284c7" stroke-width="2"/>
+                            <circle cx="50" cy="18" r="4" fill="#38bdf8"/>
+                            <polygon points="20,68 80,68 90,88 10,88" fill="#ffffff" stroke="#0284c7" stroke-width="3" rx="4"/>
+                            <polygon points="23,70 77,70 85,86 15,86" fill="#e0f2fe"/>
+                            <line x1="50" y1="70" x2="50" y2="86" stroke="#bae6fd" stroke-width="2"/>
+                            <line x1="20" y1="78" x2="80" y2="78" stroke="#bae6fd" stroke-width="2"/>
+                            <path d="M 50 60 C 43 60 38 65 38 72 C 38 80 50 92 50 92 C 50 92 62 80 62 72 C 62 65 57 60 50 60 Z" fill="url(#pinGrad)"/>
+                            <circle cx="50" cy="70" r="4" fill="#ffffff"/>
+                        </svg>
+                    </div>
+                    <span class="font-bold text-ash-800 dark:text-ash-100 text-xl tracking-tight">CellVerdict</span>
+                </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <div class="text-[11px] font-bold text-ash-400 dark:text-ash-500 uppercase tracking-wider mb-2 px-1">Platform</div>
+            <a href="#" class="flex items-center gap-3 px-3 py-2 text-ash-600 dark:text-ash-300 hover:bg-ash-200/60 dark:hover:bg-slate-700 rounded-lg text-sm font-medium mb-6 transition">
+                <i class="fa-solid fa-border-all text-ash-400"></i>
+                Dashboard
+            </a>
+
+            <div class="text-[11px] font-bold text-ash-400 dark:text-ash-500 uppercase tracking-wider mb-2 px-1">Tools & Analyzers</div>
+            <nav class="space-y-1">
+                <button id="nav-cdr-analyzer" onclick="switchMainTab('cdr-analyzer')" class="w-full text-left flex items-center gap-3 px-3 py-2 text-ash-600 dark:text-ash-300 hover:bg-ash-200/60 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <i class="fa-solid fa-chart-simple text-ash-400"></i> CDR Analyzer
+                </button>
+                <button id="nav-lac-finder" onclick="switchMainTab('lac-finder')" class="w-full text-left flex items-center gap-3 px-3 py-2 bg-sky-500 text-white rounded-xl text-sm font-semibold shadow-sm transition">
+                    <i class="fa-solid fa-location-crosshairs text-sky-100"></i> Lookup Cell
+                </button>
+                <button id="nav-imei-check" onclick="switchMainTab('imei-check')" class="w-full text-left flex items-center gap-3 px-3 py-2 text-ash-600 dark:text-ash-300 hover:bg-ash-200/60 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <i class="fa-solid fa-mobile-screen-button text-ash-400"></i> IMEI Check
+                </button>
+                <button id="nav-lrl-lcl" onclick="switchMainTab('lrl-lcl')" class="w-full text-left flex items-center gap-3 px-3 py-2 text-ash-600 dark:text-ash-300 hover:bg-ash-200/60 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <i class="fa-solid fa-tower-broadcast text-ash-400"></i> LRL / LCL Analyzer
+                </button>
+            </nav>
+        </div>
+
+        <div class="mt-6 border-t border-ash-200 dark:border-slate-700 pt-4">
+            <div class="text-[11px] font-bold text-ash-400 dark:text-ash-500 uppercase tracking-wider mb-2 px-1">System Mode</div>
+            <div class="grid grid-cols-3 gap-1 bg-ash-200 dark:bg-slate-700 p-1 rounded-xl">
+                <button onclick="setTheme('light')" id="btn-theme-light" class="flex items-center justify-center gap-1 text-xs font-semibold py-1.5 rounded-lg transition">
+                    <i class="fa-solid fa-sun text-amber-500"></i> Light
+                </button>
+                <button onclick="setTheme('dark')" id="btn-theme-dark" class="flex items-center justify-center gap-1 text-xs font-semibold py-1.5 rounded-lg transition">
+                    <i class="fa-solid fa-moon text-indigo-400"></i> Dark
+                </button>
+                <button onclick="setTheme('system')" id="btn-theme-system" class="flex items-center justify-center gap-1 text-xs font-semibold py-1.5 rounded-lg transition">
+                    <i class="fa-solid fa-desktop text-ash-500"></i> System
+                </button>
+            </div>
+            <div class="mt-4 flex items-center justify-between px-1">
+                <span id="logged-in-email" class="text-[11px] text-ash-400 dark:text-ash-500 truncate"></span>
+                <button id="logout-btn" class="text-[11px] font-semibold text-red-600 hover:text-red-700 dark:text-red-400 shrink-0 ml-2">
+                    <i class="fa-solid fa-right-from-bracket mr-1"></i>Logout
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 p-4 md:p-8 overflow-y-auto">
+        
+        <!-- Top Navigation Header for Admin -->
+        <div class="flex justify-between items-center mb-6 pb-4 border-b border-ash-200 dark:border-slate-700">
+            <div id="active-tab-title" class="font-bold text-ash-800 dark:text-ash-100 text-lg">
+                Cell Lookup & Analysis
+            </div>
+
+            <!-- Top Right Admin Tab -->
+            <button id="nav-users" onclick="switchMainTab('users')" class="flex items-center gap-2 px-4 py-2 text-ash-700 dark:text-ash-200 bg-white dark:bg-slate-800 border border-ash-200 dark:border-slate-700 hover:bg-ash-100 dark:hover:bg-slate-700 rounded-xl text-sm font-semibold transition shadow-sm">
+                <i class="fa-solid fa-user-shield text-sky-600 dark:text-sky-400"></i>
+                <span>Admin</span>
+                <span id="nav-pending-badge" class="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
+            </button>
+        </div>
+
+        <!-- SECTION 0: USER MANAGEMENT (ADMIN USERS) -->
+        <div id="section-users" class="hidden">
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-ash-900 dark:text-white tracking-tight">Admin Control Panel</h1>
+                <p class="text-xs text-ash-500 dark:text-ash-400 mt-0.5">Manage who can log in and use CellVerdict.</p>
+            </div>
+
+            <!-- Card 1: Add a User -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 p-6 mb-8 shadow-sm">
+                <h2 class="font-bold text-ash-800 dark:text-ash-100 text-sm mb-4">Add a new user</h2>
+                <form id="add-user-form" onsubmit="handleCreateUser(event)" class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                    <div>
+                        <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Name</label>
+                        <input type="text" id="new-user-name" required placeholder="Full Name" class="w-full bg-white dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-600 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Email</label>
+                        <input type="email" id="new-user-email" required placeholder="user@example.com" class="w-full bg-white dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-600 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Password</label>
+                        <input type="password" id="new-user-pass" required placeholder="Password" class="w-full bg-white dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-600 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Confirm</label>
+                        <input type="password" id="new-user-confirm" required placeholder="Confirm password" class="w-full bg-white dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-600 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-ash-600 dark:text-ash-400 mb-1.5">Role</label>
+                        <div class="relative">
+                            <select id="new-user-role" class="w-full bg-white dark:bg-slate-900 border border-emerald-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 dark:focus:ring-emerald-900 font-semibold text-ash-800 dark:text-ash-100 appearance-none pr-8">
+                                <option value="Admin">Admin</option>
+                                <option value="Officer" selected>Officer</option>
+                            </select>
+                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-ash-500">
+                                <i class="fa-solid fa-chevron-down text-xs"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-5 mt-2">
+                        <button type="submit" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider px-6 py-3 rounded-full transition shadow-sm">
+                            Create User
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Card 2: All Users Table -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-ash-100 dark:border-slate-700 flex items-center justify-between">
+                    <h2 class="font-bold text-ash-800 dark:text-ash-100 text-sm">All users (<span id="user-count-total">0</span>)</h2>
+                    <span id="pending-approval-badge" class="bg-amber-100/80 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 font-semibold text-xs px-3 py-1 rounded-full border border-amber-200/50 dark:border-amber-800/50">
+                        0 pending approval
+                    </span>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-50 dark:bg-slate-900/50 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                <th class="p-3.5 pl-6">Name</th>
+                                <th class="p-3.5">Email</th>
+                                <th class="p-3.5">Role</th>
+                                <th class="p-3.5">Status</th>
+                                <th class="p-3.5">Joined</th>
+                                <th class="p-3.5 text-center pr-6">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 1: LOOKUP CELL TAB (PRIMARY) -->
+        <div id="section-lac-finder">
+            <div class="mb-6 flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold text-ash-900 dark:text-white tracking-tight">Lookup Cell</h1>
+                    <p class="text-xs text-ash-500 dark:text-ash-400 mt-0.5">Search multiple cells from IndexedDB to view directions and calculate inter-cell distances.</p>
+                </div>
+                <div id="db-status-badge" class="bg-white dark:bg-slate-800 border border-ash-200 dark:border-slate-700 text-ash-700 dark:text-ash-300 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+                    <span>Database: Loading IndexedDB...</span>
+                </div>
+            </div>
+
+            <!-- Search Parameters Card -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 p-6 mb-6 shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="flex items-center gap-2 font-bold text-ash-800 dark:text-ash-100 text-sm">
+                        <i class="fa-solid fa-magnifying-glass text-sky-600 dark:text-sky-400"></i>
+                        <span>Search Parameters</span>
+                    </div>
+                    <button id="add-row-btn" onclick="addSearchRow()" class="bg-sky-50 dark:bg-sky-900/30 hover:bg-sky-100 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-xs px-3.5 py-2 rounded-xl font-semibold transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i> Add more search
+                    </button>
+                </div>
+
+                <!-- Dynamic Search Inputs -->
+                <div id="search-rows-container" class="space-y-4">
+                    <div class="search-row bg-ash-50/70 dark:bg-slate-900/50 border border-ash-200 dark:border-slate-700 rounded-xl p-4 flex items-center gap-4 relative">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-ash-600 dark:text-ash-400 mb-1">LAC / TAC *</label>
+                            <input type="text" class="lac-input w-full bg-white dark:bg-slate-800 border border-ash-300 dark:border-slate-600 focus:border-sky-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900 transition" placeholder="e.g. 58642">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-ash-600 dark:text-ash-400 mb-1">Cell ID (ECI or Short CI) *</label>
+                            <input type="text" class="cell-input w-full bg-white dark:bg-slate-800 border border-ash-300 dark:border-slate-600 focus:border-sky-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-100 dark:focus:ring-sky-900 transition" placeholder="e.g. 27114313">
+                        </div>
+                        <button onclick="removeSearchRow(this)" class="text-ash-400 hover:text-red-500 transition mt-5">
+                            <i class="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3 mt-5">
+                    <button onclick="performSearch()" class="bg-sky-600 hover:bg-sky-700 text-white text-sm px-6 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition shadow-sm">
+                        <i class="fa-solid fa-magnifying-glass"></i> Search
+                    </button>
+                    <button onclick="resetSearch()" class="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-ash-700 dark:text-ash-200 text-sm px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition">
+                        <i class="fa-solid fa-rotate-right"></i> Reset
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filter Input -->
+            <div class="bg-white dark:bg-slate-800 rounded-xl border border-ash-200 dark:border-slate-700 p-3 mb-4 shadow-sm flex items-center gap-2">
+                <i class="fa-solid fa-magnifying-glass text-ash-400 pl-2"></i>
+                <input type="text" id="table-filter" oninput="filterTable()" placeholder="Search records..." class="w-full bg-transparent text-sm text-ash-800 dark:text-ash-100 focus:outline-none placeholder-ash-400">
+            </div>
+
+            <!-- Results Table -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-50 dark:bg-slate-900/50 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                <th class="p-3">Operator</th>
+                                <th class="p-3">LAC / TAC</th>
+                                <th class="p-3">Cell ID (SHORT / ECI)</th>
+                                <th class="p-3">Latitude</th>
+                                <th class="p-3">Longitude</th>
+                                <th class="p-3">Azimuth</th>
+                                <th class="p-3">Address</th>
+                                <th class="p-3">District</th>
+                                <th class="p-3">Thana</th>
+                                <th class="p-3">Open Map</th>
+                                <th class="p-3 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Multi BTS Tower Map -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm p-4 relative">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2 font-bold text-ash-800 dark:text-ash-100 text-sm">
+                        <i class="fa-solid fa-location-dot text-red-500"></i>
+                        <span>Multi BTS Tower Location & Distance Map</span>
+                    </div>
+                    <div id="distance-summary-badge" class="text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-900/40 border border-sky-200 dark:border-sky-800 px-3 py-1 rounded-lg hidden">
+                    </div>
+                </div>
+
+                <div class="relative">
+                    <div class="map-type-control">
+                        <button id="btn-street" onclick="switchMapLayer('street')" class="map-type-btn">Street</button>
+                        <button id="btn-sat" onclick="switchMapLayer('sat')" class="map-type-btn">Satellite</button>
+                        <button id="btn-hybrid" onclick="switchMapLayer('hybrid')" class="map-type-btn active">Hybrid</button>
+                    </div>
+                    <div id="map"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 2: CDR ANALYZER TAB (ADVANCED MULTI-FILE SUPPORT STORED IN INDEXEDDB) -->
+        <div id="section-cdr-analyzer" class="hidden">
+            
+            <!-- Sensitive CDR Data Notice Banner -->
+            <div class="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-2xl p-4 mb-6 flex items-start gap-3.5 shadow-sm">
+                <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-red-800 dark:text-red-300 text-sm mb-0.5">Sensitive CDR Data Notice</h3>
+                    <p class="text-xs text-red-700/90 dark:text-red-400/90 leading-relaxed">
+                        Your uploaded CDR data is <span class="font-bold underline decoration-red-400">securely stored in browser IndexedDB</span> to allow you to review and perform further analysis. You can <span class="font-bold">delete any uploaded CDR at any time</span> from the table below.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Page Title Header -->
+            <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xl tracking-tight">
+                        <i class="fa-solid fa-chart-column text-emerald-600"></i>
+                        <h1 class="text-2xl font-bold text-ash-900 dark:text-white">Upload & Analyze CDR</h1>
+                    </div>
+                    <p class="text-xs text-ash-500 dark:text-ash-400 mt-1">Choose one or more CSV or Excel files to import and persist via IndexedDB.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="clearAllCDRData()" class="bg-white dark:bg-slate-800 border border-ash-200 dark:border-slate-700 hover:bg-ash-100 dark:hover:bg-slate-700 text-ash-700 dark:text-ash-200 text-xs px-4 py-2 rounded-xl font-semibold transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-rotate text-ash-400"></i> Start Fresh / Reset
+                    </button>
+                    <div id="cdr-status-badge" class="bg-white dark:bg-slate-800 border border-ash-200 dark:border-slate-700 text-ash-700 dark:text-ash-300 px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-sm flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span id="cdr-summary-text">0 CDR Records Loaded</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload CDR Main Card -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-emerald-500/30 dark:border-slate-700 p-6 mb-6 shadow-sm">
+                
+                <form id="cdr-upload-form" onsubmit="handleCDRSubmit(event)" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-ash-700 dark:text-ash-300 mb-1.5">
+                                Select CSV / Excel File(s) *
+                            </label>
+                            <input type="file" id="cdr-file-input" multiple accept=".xlsx, .xls, .csv" required class="block w-full text-xs text-ash-600 dark:text-ash-300 border border-ash-300 dark:border-slate-600 rounded-xl cursor-pointer bg-ash-50 dark:bg-slate-900 p-2 focus:outline-none focus:border-emerald-500" />
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-ash-700 dark:text-ash-300 mb-1.5">
+                                Suspect Name / Target Label
+                            </label>
+                            <input type="text" id="cdr-suspect-name" placeholder="e.g. John Doe / Suspect A" class="w-full bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100" />
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-ash-700 dark:text-ash-300 mb-1.5">
+                                Reference Case / GD No
+                            </label>
+                            <input type="text" id="cdr-reference-case" placeholder="e.g. Case #102/2026" class="w-full bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100" />
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-ash-700 dark:text-ash-300 mb-1.5">
+                                Operator (Optional)
+                            </label>
+                            <select id="cdr-operator-select" class="w-full bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100">
+                                <option value="Auto Detect" selected>Auto Detect Operator</option>
+                                <option value="GrameenPhone">GrameenPhone</option>
+                                <option value="Robi">Robi</option>
+                                <option value="Banglalink">Banglalink</option>
+                                <option value="Teletalk">Teletalk</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-3 pt-2">
+                        <button type="submit" id="cdr-parse-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2.5 px-6 rounded-xl font-bold transition flex items-center gap-2 shadow-sm">
+                            <i class="fa-solid fa-cloud-arrow-up text-sm"></i> Start Importing & Analyze
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Live Progress Card -->
+                <div id="cdr-progress-box" class="mt-5 p-4 bg-emerald-50/50 dark:bg-slate-900/60 border border-emerald-200 dark:border-emerald-900/50 rounded-xl hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-regular fa-circle-check text-emerald-600 dark:text-emerald-400"></i>
+                            <span id="cdr-progress-status" class="font-bold text-xs text-ash-800 dark:text-ash-100">Processing files...</span>
+                        </div>
+                        <span id="cdr-progress-percent" class="font-extrabold text-xs text-emerald-700 dark:text-emerald-400">0%</span>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-ash-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                        <div id="cdr-progress-bar" class="bg-emerald-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-[11px] text-ash-500 dark:text-ash-400 mt-1.5 font-medium">
+                        <span id="cdr-rows-processed-text">0 rows imported</span>
+                        <span id="cdr-files-processed-text">0 Files</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Uploaded CDR Files Master Table -->
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
+                <div class="p-4 border-b border-ash-100 dark:border-slate-700 flex items-center justify-between bg-ash-50/50 dark:bg-slate-900/30">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-folder-closed text-sky-600"></i>
+                        <h2 class="font-bold text-ash-800 dark:text-ash-100 text-sm">All Uploaded CDR Files (<span id="cdr-file-count">0</span>)</h2>
+                    </div>
+                    <button onclick="clearAllCDRData()" class="text-xs text-red-500 hover:text-red-700 font-semibold transition">Clear All Files</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-50 dark:bg-slate-900/50 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                <th class="p-3.5 pl-5">File Name</th>
+                                <th class="p-3.5">Suspect Name</th>
+                                <th class="p-3.5">Case Ref</th>
+                                <th class="p-3.5">Records</th>
+                                <th class="p-3.5">Upload Date</th>
+                                <th class="p-3.5 text-center pr-5">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cdr-file-list-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                            <tr>
+                                <td colspan="6" class="text-center py-6 text-ash-400">No CDR files uploaded yet. Upload a CSV/Excel file above to view analysis.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- CDR Date / Type / Direction Filter Bar -->
+            <div id="cdr-date-filter-bar" class="hidden bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm p-3.5 mb-4">
+                <div class="flex flex-wrap items-end gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-ash-500 dark:text-ash-400 uppercase mb-1">From</label>
+                        <input type="date" id="cdr-filter-start-date" class="bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-ash-500 dark:text-ash-400 uppercase mb-1">To</label>
+                        <input type="date" id="cdr-filter-end-date" class="bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-ash-500 dark:text-ash-400 uppercase mb-1">Quick Date</label>
+                        <select id="cdr-filter-quick-date" onchange="applyQuickDateFilter()" class="bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100">
+                            <option value="">Custom</option>
+                            <option value="7">Last 7 Days</option>
+                            <option value="30">Last 30 Days</option>
+                            <option value="90">Last 90 Days</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-ash-500 dark:text-ash-400 uppercase mb-1">Type</label>
+                        <select id="cdr-filter-type" class="bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100">
+                            <option value="">All Types</option>
+                            <option value="voice">Voice Calls</option>
+                            <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-ash-500 dark:text-ash-400 uppercase mb-1">Direction</label>
+                        <select id="cdr-filter-direction" class="bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100">
+                            <option value="">All Directions</option>
+                            <option value="Incoming">Incoming</option>
+                            <option value="Outgoing">Outgoing</option>
+                        </select>
+                    </div>
+                    <button onclick="applyCdrFilters()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition flex items-center gap-1.5"><i class="fa-solid fa-filter"></i> Apply Filter</button>
+                    <button onclick="resetCdrFilters()" class="bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200 text-xs font-bold py-2 px-4 rounded-lg transition flex items-center gap-1.5"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+                </div>
+                <div id="cdr-filter-status" class="text-[11px] text-ash-500 dark:text-ash-400 mt-2.5"></div>
+            </div>
+
+            <!-- CDR Sub-Tab Navigation -->
+            <div id="cdr-subtabs-bar" class="hidden bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm p-1.5 mb-4 flex flex-wrap gap-1">
+                <button onclick="switchCdrSubTab('summary')" id="cdr-subtab-btn-summary" class="cdr-subtab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-chart-simple"></i> Summary
+                </button>
+                <button onclick="switchCdrSubTab('inspect')" id="cdr-subtab-btn-inspect" class="cdr-subtab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-list-ul"></i> Inspect CDR
+                </button>
+                <button onclick="switchCdrSubTab('common')" id="cdr-subtab-btn-common" class="cdr-subtab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-share-nodes"></i> Common Numbers
+                </button>
+                <button onclick="switchCdrSubTab('location')" id="cdr-subtab-btn-location" class="cdr-subtab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-location-dot"></i> Location (EST)
+                </button>
+                <button onclick="switchCdrSubTab('imei')" id="cdr-subtab-btn-imei" class="cdr-subtab-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition">
+                    <i class="fa-solid fa-mobile-screen"></i> IMEI Period
+                </button>
+            </div>
+
+            <!-- ===== PANEL: SUMMARY ===== -->
+            <div id="cdr-panel-summary" class="hidden">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Total CDR Records</span>
+                        <span id="stat-total-calls" class="text-xl font-bold text-ash-800 dark:text-ash-100">0</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Unique Target Numbers</span>
+                        <span id="stat-unique-targets" class="text-xl font-bold text-sky-600 dark:text-sky-400">0</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Unique Other Parties</span>
+                        <span id="stat-unique-others" class="text-xl font-bold text-emerald-600 dark:text-emerald-400">0</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Unique Towers / LAC</span>
+                        <span id="stat-unique-cells" class="text-xl font-bold text-purple-600 dark:text-purple-400">0</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Voice Calls</span>
+                        <span id="stat-voice-count" class="text-xl font-bold text-ash-800 dark:text-ash-100">0</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">SMS Count</span>
+                        <span id="stat-sms-count" class="text-xl font-bold text-ash-800 dark:text-ash-100">0</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Total Talk Time</span>
+                        <span id="stat-total-duration" class="text-xl font-bold text-ash-800 dark:text-ash-100">0s</span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-ash-200 dark:border-slate-700 shadow-sm">
+                        <span class="text-xs font-semibold text-ash-400 uppercase block mb-1">Date Range Covered</span>
+                        <span id="stat-date-range" class="text-sm font-bold text-ash-800 dark:text-ash-100">-</span>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm p-5">
+                    <h3 class="font-bold text-ash-800 dark:text-ash-100 text-sm mb-3">Activity by Time of Day</h3>
+                    <div id="summary-period-breakdown" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+                </div>
+            </div>
+
+            <!-- ===== PANEL: INSPECT CDR ===== -->
+            <div id="cdr-panel-inspect" class="hidden">
+                <!-- Filter CDR Table Input -->
+                <div id="cdr-filter-box" class="bg-white dark:bg-slate-800 rounded-xl border border-ash-200 dark:border-slate-700 p-3 mb-4 shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-magnifying-glass text-ash-400 pl-2"></i>
+                    <input type="text" id="cdr-table-filter" oninput="filterCDRTable()" placeholder="Search in active CDR records (Phone, Date, LAC, Cell ID, Suspect)..." class="w-full bg-transparent text-sm text-ash-800 dark:text-ash-100 focus:outline-none placeholder-ash-400">
+                </div>
+
+                <!-- Detailed CDR Data Table -->
+                <div id="cdr-table-card" class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
+                    <div class="p-4 border-b border-ash-100 dark:border-slate-700 flex items-center justify-between">
+                        <h3 class="font-bold text-ash-800 dark:text-ash-100 text-sm">CDR Record Details View</h3>
+                        <span id="active-cdr-view-title" class="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">Showing All Loaded Records</span>
+                    </div>
+                    <div class="overflow-x-auto max-h-[500px]">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-100 dark:bg-slate-900 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                    <th class="p-3">#</th>
+                                    <th class="p-3">Suspect / Ref</th>
+                                    <th class="p-3">Target Number</th>
+                                    <th class="p-3">Other Number</th>
+                                    <th class="p-3">Call Type</th>
+                                    <th class="p-3">Date & Time</th>
+                                    <th class="p-3">Period</th>
+                                    <th class="p-3">Duration (s)</th>
+                                    <th class="p-3">LAC / TAC</th>
+                                    <th class="p-3">Cell ID</th>
+                                    <th class="p-3">IMEI</th>
+                                    <th class="p-3">IMSI</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cdr-table-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="cdr-inspect-pagination"></div>
+                </div>
+            </div>
+
+            <!-- ===== PANEL: COMMON NUMBERS ===== -->
+            <div id="cdr-panel-common" class="hidden">
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
+                    <div class="p-4 border-b border-ash-100 dark:border-slate-700">
+                        <h3 class="font-bold text-ash-800 dark:text-ash-100 text-sm">Most Frequently Contacted Numbers</h3>
+                        <p class="text-[11px] text-ash-500 dark:text-ash-400 mt-0.5">Sorted by total number of contacts (calls + SMS), highest first. Shows which uploaded CDR file(s) this number appears in.</p>
+                    </div>
+                    <div class="overflow-x-auto max-h-[600px]">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-100 dark:bg-slate-900 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                    <th class="p-3">#</th>
+                                    <th class="p-3">Number</th>
+                                    <th class="p-3">Total</th>
+                                    <th class="p-3">Out</th>
+                                    <th class="p-3">In</th>
+                                    <th class="p-3">Out SMS</th>
+                                    <th class="p-3">In SMS</th>
+                                    <th class="p-3">Duration</th>
+                                    <th class="p-3">Days</th>
+                                    <th class="p-3">Appears In (Suspect/File)</th>
+                                    <th class="p-3">First Contact</th>
+                                    <th class="p-3">Last Contact</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cdr-common-numbers-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="cdr-common-pagination"></div>
+                </div>
+            </div>
+
+            <!-- ===== PANEL: LOCATION (EST) ===== -->
+            <div id="cdr-panel-location" class="hidden">
+                <div class="bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900 rounded-xl p-3.5 mb-4 text-xs text-sky-800 dark:text-sky-300">
+                    <i class="fa-solid fa-circle-info mr-1.5"></i>
+                    Estimated locations are matched against the LAC/Cell tower database (Lookup Cell tab). Rows with no match mean that LAC/Cell ID pair isn't in your uploaded tower database yet.
+                </div>
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
+                    <div class="p-4 border-b border-ash-100 dark:border-slate-700">
+                        <h3 id="cdr-location-title" class="font-bold text-ash-800 dark:text-ash-100 text-sm">Estimated Locations Visited</h3>
+                        <p class="text-[11px] text-ash-500 dark:text-ash-400 mt-0.5">Sorted by number of visits (records at that tower), highest first.</p>
+                    </div>
+                    <div class="overflow-x-auto max-h-[600px]">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-100 dark:bg-slate-900 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                    <th class="p-3">#</th>
+                                    <th class="p-3">Estimated Location</th>
+                                    <th class="p-3">LAC / Cell</th>
+                                    <th class="p-3">Visits</th>
+                                    <th class="p-3">Incoming</th>
+                                    <th class="p-3">Outgoing</th>
+                                    <th class="p-3">Total Duration</th>
+                                    <th class="p-3">First Seen</th>
+                                    <th class="p-3">Last Seen</th>
+                                    <th class="p-3">Map</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cdr-location-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="cdr-location-pagination"></div>
+                </div>
+            </div>
+
+            <!-- ===== PANEL: IMEI PERIOD ===== -->
+            <div id="cdr-panel-imei" class="hidden">
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
+                    <div class="p-4 border-b border-ash-100 dark:border-slate-700">
+                        <h3 class="font-bold text-ash-800 dark:text-ash-100 text-sm">IMEI Usage Periods</h3>
+                        <p class="text-[11px] text-ash-500 dark:text-ash-400 mt-0.5">Shows which handset (IMEI) the target number used, and during which date range - useful for detecting phone changes.</p>
+                    </div>
+                    <div class="overflow-x-auto max-h-[600px]">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="sticky top-0 z-10">
+                                <tr class="border-b border-ash-200 dark:border-slate-700 bg-ash-100 dark:bg-slate-900 text-ash-500 dark:text-ash-400 font-bold uppercase tracking-wider">
+                                    <th class="p-3">#</th>
+                                    <th class="p-3">IMEI</th>
+                                    <th class="p-3">Brand / Model</th>
+                                    <th class="p-3">Records</th>
+                                    <th class="p-3">Start Date</th>
+                                    <th class="p-3">End Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cdr-imei-period-body" class="divide-y divide-ash-100 dark:divide-slate-700 font-medium text-ash-700 dark:text-ash-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="cdr-imei-pagination"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- SECTION 3: IMEI CHECK TAB -->
+        <div id="section-imei-check" class="hidden max-w-5xl">
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-ash-900 dark:text-white tracking-tight">IMEI Lookup</h1>
+                <p class="text-xs text-ash-500 dark:text-ash-400 mt-1">Enter an IMEI number to get device information.</p>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-xs font-bold text-ash-700 dark:text-ash-300 mb-1.5">IMEI Number</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="imei-input" maxlength="15" placeholder="Enter 14 or 15 digit IMEI" class="flex-1 bg-white dark:bg-slate-800 border border-ash-300 dark:border-slate-600 focus:border-emerald-600 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-600 transition shadow-sm">
+                    <button onclick="checkIMEI()" class="bg-emerald-700 hover:bg-emerald-800 text-white text-sm px-5 py-2.5 rounded-xl font-semibold transition shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-magnifying-glass"></i> Look Up
+                    </button>
+                    <button onclick="clearIMEI()" class="bg-white dark:bg-slate-800 border border-ash-300 dark:border-slate-600 hover:bg-ash-50 dark:hover:bg-slate-700 text-ash-700 dark:text-ash-200 text-sm px-4 py-2.5 rounded-xl font-semibold transition shadow-sm">
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <!-- Device Information Card -->
+            <div id="imei-results-container" class="hidden bg-slate-50/80 dark:bg-slate-800/80 border border-ash-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm">
+                <div class="flex items-center gap-2.5 text-ash-800 dark:text-ash-100 font-bold text-lg mb-4">
+                    <div class="w-6 h-6 rounded-md bg-sky-100 dark:bg-sky-900/50 border border-sky-300 dark:border-sky-700 flex items-center justify-center text-sky-600 dark:text-sky-300 text-xs">
+                        <i class="fa-solid fa-mobile-screen-button"></i>
+                    </div>
+                    <span>Device Information</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">IMEI</span>
+                        <span id="res-imei" class="font-bold text-sky-600 dark:text-sky-400 text-sm tracking-wide"></span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Brand</span>
+                        <span id="res-brand" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Model</span>
+                        <span id="res-model" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Model Name</span>
+                        <span id="res-model-name" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button onclick="openExternalIMEI()" class="bg-white dark:bg-slate-900 border border-ash-300 dark:border-slate-700 hover:bg-ash-50 dark:hover:bg-slate-800 text-ash-800 dark:text-ash-200 text-xs px-4 py-2 rounded-xl font-semibold transition shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-mobile-screen"></i> Search Device Online
+                    </button>
+                    <button onclick="copyIMEI()" class="bg-white dark:bg-slate-900 border border-ash-300 dark:border-slate-700 hover:bg-ash-50 dark:hover:bg-slate-800 text-ash-800 dark:text-ash-200 text-xs px-4 py-2 rounded-xl font-semibold transition shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-phone-volume text-ash-500"></i> Copy IMEI
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 4: LRL / LCL ANALYZER TAB -->
+        <div id="section-lrl-lcl" class="hidden max-w-5xl">
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold text-ash-900 dark:text-white tracking-tight">LRL / LCL Analyzer</h1>
+                <p class="text-xs text-ash-500 dark:text-ash-400 mt-1">Paste raw LRL/LCL text and analyze IMEI/device info and location.</p>
+            </div>
+
+            <div class="bg-white dark:bg-slate-800 rounded-2xl border border-ash-200 dark:border-slate-700 shadow-sm p-5 mb-6">
+                <label class="block text-xs font-bold text-ash-700 dark:text-ash-300 mb-1.5">LRL / LCL Info</label>
+                <textarea id="lrl-input" rows="5" placeholder="[44231 77043213]&#10;VILL: BADARPUR, PO: KEPURON, UNION: NARAYANPUR, P.S: MOTLAB, CHANDPUR.&#10;354097150399120&#10;470010495174121 [GP]" class="w-full bg-ash-50 dark:bg-slate-900 border border-ash-300 dark:border-slate-600 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-emerald-500 text-ash-800 dark:text-ash-100"></textarea>
+                <div class="flex gap-3 mt-3">
+                    <button onclick="processLrlLcl()" class="bg-emerald-700 hover:bg-emerald-800 text-white text-sm px-5 py-2.5 rounded-xl font-semibold transition shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-gears"></i> Process
+                    </button>
+                    <button onclick="resetLrlLcl()" class="bg-white dark:bg-slate-800 border border-ash-300 dark:border-slate-600 hover:bg-ash-50 dark:hover:bg-slate-700 text-ash-700 dark:text-ash-200 text-sm px-4 py-2.5 rounded-xl font-semibold transition shadow-sm">
+                        Reset
+                    </button>
+                </div>
+            </div>
+
+            <div id="lrl-results-card" class="hidden bg-slate-50/80 dark:bg-slate-800/80 border border-ash-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm">
+                <h3 class="font-bold text-ash-800 dark:text-ash-100 text-sm mb-4">Latest Location Activity</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Phone Number</span>
+                        <span id="lrl-res-phone" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Date & Time</span>
+                        <span id="lrl-res-datetime" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">IMEI</span>
+                        <span id="lrl-res-imei" class="font-bold text-sky-600 dark:text-sky-400 text-sm"></span>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                        <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Location Map</span>
+                        <button id="lrl-res-map-btn" onclick="openLrlMapModal()" class="text-xs font-bold text-sky-600 hover:underline"><i class="fa-solid fa-map-location-dot mr-1"></i>View on Map</button>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm mb-4">
+                    <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Brand / Model</span>
+                    <span id="lrl-res-brandmodel" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                </div>
+                <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-ash-100 dark:border-slate-700 shadow-sm">
+                    <span class="text-[11px] font-semibold text-ash-400 uppercase block mb-1">Address</span>
+                    <span id="lrl-res-address" class="font-bold text-ash-800 dark:text-ash-100 text-sm"></span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Tower Map View Modal (used by Location (EST) and LRL/LCL Analyzer) -->
+    <div id="tower-map-modal" class="hidden fixed inset-0 z-[95] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between p-4 border-b border-ash-100 dark:border-slate-700 shrink-0">
+                <div>
+                    <h3 class="font-bold text-ash-800 dark:text-ash-100 text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-location-dot text-red-500"></i> Tower Map View
+                    </h3>
+                    <p id="tower-modal-subtitle" class="text-[11px] text-ash-500 dark:text-ash-400 mt-0.5"></p>
+                </div>
+                <button onclick="closeTowerMapModal()" class="text-ash-400 hover:text-ash-700 dark:hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto">
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <span id="tower-modal-lat" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200"></span>
+                    <span id="tower-modal-lng" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200"></span>
+                    <span id="tower-modal-azimuth" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200"></span>
+                    <span id="tower-modal-beamwidth" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200"></span>
+                    <button onclick="copyTowerModalCoords()" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400 border border-sky-200 dark:border-sky-800"><i class="fa-solid fa-copy mr-1"></i>Copy</button>
+                </div>
+                <div id="tower-modal-map" style="height: 320px;" class="rounded-xl overflow-hidden border border-ash-200 dark:border-slate-700"></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                    <div class="bg-ash-50 dark:bg-slate-900/50 rounded-xl p-3 border border-ash-100 dark:border-slate-700">
+                        <div class="text-[10px] font-bold text-ash-400 uppercase mb-1">Address</div>
+                        <div id="tower-modal-address" class="text-xs font-semibold text-ash-800 dark:text-ash-100"></div>
+                    </div>
+                    <div class="bg-ash-50 dark:bg-slate-900/50 rounded-xl p-3 border border-ash-100 dark:border-slate-700">
+                        <div class="text-[10px] font-bold text-ash-400 uppercase mb-1">First / Last Seen</div>
+                        <div id="tower-modal-seen" class="text-xs font-semibold text-ash-800 dark:text-ash-100"></div>
+                    </div>
+                </div>
+                <div class="bg-ash-50 dark:bg-slate-900/50 rounded-xl p-3 border border-ash-100 dark:border-slate-700 mt-3">
+                    <div class="text-[10px] font-bold text-ash-400 uppercase mb-1">Active Numbers</div>
+                    <div id="tower-modal-numbers" class="text-xs"></div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 p-4 border-t border-ash-100 dark:border-slate-700 shrink-0">
+                <button onclick="closeTowerMapModal()" class="px-4 py-2 rounded-xl text-xs font-bold bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200 hover:bg-ash-200 dark:hover:bg-slate-600 transition">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CSV Upload & File Management Modal -->
+    <div id="upload-modal" class="fixed inset-0 bg-ash-900/40 dark:bg-black/60 hidden backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-ash-200 dark:border-slate-700">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-lg text-ash-800 dark:text-ash-100">Upload & Manage CSV/Excel Database</h3>
+                <button onclick="closeModal()" class="text-ash-400 hover:text-ash-600 dark:hover:text-ash-200">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <p class="text-xs text-ash-500 dark:text-ash-400 mb-3">Upload CSV or Excel containing cell tower data. All records are saved in IndexedDB.</p>
+            
+            <input type="file" id="csv-file-input" accept=".csv, .xlsx, .xls" class="block w-full text-sm text-ash-500 border border-ash-200 dark:border-slate-700 rounded-xl cursor-pointer bg-ash-50 dark:bg-slate-900 p-2.5 mb-4 focus:outline-none" />
+
+            <div class="flex justify-end gap-2 mb-6">
+                <button onclick="closeModal()" class="px-4 py-2 bg-ash-100 dark:bg-slate-700 text-ash-700 dark:text-ash-200 rounded-xl text-sm font-semibold hover:bg-ash-200 dark:hover:bg-slate-600 transition">Cancel</button>
+                <button id="upload-btn" onclick="handleFileUpload()" class="px-5 py-2 bg-sky-600 text-white rounded-xl text-sm font-semibold hover:bg-sky-700 transition shadow-sm">
+                    <i class="fa-solid fa-file-arrow-up mr-1.5"></i> Upload to DB
+                </button>
+            </div>
+
+            <!-- Manage Uploaded Files List -->
+            <div class="border-t border-ash-200 dark:border-slate-700 pt-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="font-bold text-xs uppercase tracking-wider text-ash-600 dark:text-ash-400">Uploaded Files</h4>
+                    <button onclick="clearDatabase()" class="text-red-600 hover:text-red-700 text-xs font-bold transition flex items-center gap-1">
+                        <i class="fa-solid fa-trash-can"></i> Delete All
+                    </button>
+                </div>
+
+                <div id="uploaded-files-list" class="max-h-48 overflow-y-auto space-y-2 pr-1">
+                    <div class="text-xs text-ash-400 py-3 text-center bg-ash-50 dark:bg-slate-900 rounded-xl">No files uploaded yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let database = [];
+        let dbInstance = null;
+        
+        // Extended CDR Management Store
+        let cdrMasterFiles = []; // Holds uploaded CDR metadata
+        let cdrRecords = [];     // Holds all parsed CDR rows
+
+        // Mock Users State
+        let usersData = [];
+
+        let map;
+        let mapLayersGroup = L.layerGroup();
+
+        // Tile Layers
+        const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+        const satLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '&copy; Google Maps' });
+        const hybridLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '&copy; Google Maps' });
+
+        // --- INDEXEDDB INITIALIZATION & PERSISTENCE ---
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('CellVerdictDB', 6);
+
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('towers')) {
+                        db.createObjectStore('towers', { autoIncrement: true });
+                    }
+                    if (!db.objectStoreNames.contains('cdr_files')) {
+                        db.createObjectStore('cdr_files', { keyPath: 'id' });
+                    }
+                    if (!db.objectStoreNames.contains('cdr_records')) {
+                        db.createObjectStore('cdr_records', { autoIncrement: true });
+                    }
+                };
+
+                request.onsuccess = (e) => {
+                    dbInstance = e.target.result;
+                    Promise.all([
+                        loadDatabaseFromIndexedDB(),
+                        loadCDRFromIndexedDB()
+                    ]).then(() => resolve());
+                };
+
+                request.onerror = (e) => {
+                    console.error('IndexedDB error:', e.target.error);
+                    updateDbStatusBadge('Storage Error');
+                    reject(e);
+                };
+            });
+        }
+
+        function loadDatabaseFromIndexedDB() {
+            return new Promise((resolve) => {
+                if (!dbInstance) return resolve();
+                const tx = dbInstance.transaction('towers', 'readonly');
+                const store = tx.objectStore('towers');
+                const request = store.getAll();
+
+                request.onsuccess = () => {
+                    database = request.result || [];
+                    if (database.length > 0) {
+                        updateDbStatusBadge(`${database.length.toLocaleString()} Records Loaded`);
+                    } else {
+                        updateDbStatusBadge('No Data (Upload CSV)');
+                    }
+                    renderFileList();
+                    resolve();
+                };
+            });
+        }
+
+        function loadCDRFromIndexedDB() {
+            return new Promise((resolve) => {
+                if (!dbInstance) return resolve();
+                const tx = dbInstance.transaction(['cdr_files', 'cdr_records'], 'readonly');
+                const fileStore = tx.objectStore('cdr_files');
+                const recordStore = tx.objectStore('cdr_records');
+
+                fileStore.getAll().onsuccess = (e1) => {
+                    cdrMasterFiles = e1.target.result || [];
+                    recordStore.getAll().onsuccess = (e2) => {
+                        cdrRecords = e2.target.result || [];
+                        renderCDRMasterFileList();
+                        renderCDRResults();
+                        resolve();
+                    };
+                };
+            });
+        }
+
+        function storeNewRecords(newRecords) {
+            return new Promise((resolve, reject) => {
+                if (!dbInstance) return reject('Database not ready');
+                const tx = dbInstance.transaction('towers', 'readwrite');
+                const store = tx.objectStore('towers');
+                newRecords.forEach(item => store.add(item));
+
+                tx.oncomplete = () => {
+                    loadDatabaseFromIndexedDB().then(() => resolve(newRecords.length));
+                };
+                tx.onerror = (e) => reject(e);
+            });
+        }
+
+        function storeCDRToIndexedDB(fileMeta, records) {
+            return new Promise((resolve, reject) => {
+                if (!dbInstance) return reject('Database not ready');
+                const tx = dbInstance.transaction(['cdr_files', 'cdr_records'], 'readwrite');
+                const fileStore = tx.objectStore('cdr_files');
+                const recordStore = tx.objectStore('cdr_records');
+
+                fileStore.put(fileMeta);
+                records.forEach(r => recordStore.add(r));
+
+                tx.oncomplete = () => {
+                    loadCDRFromIndexedDB().then(() => resolve());
+                };
+                tx.onerror = (e) => reject(e);
+            });
+        }
+
+        function deleteCDRFileFromDB(fileId) {
+            return new Promise((resolve, reject) => {
+                if (!dbInstance) return reject('Database not ready');
+                const tx = dbInstance.transaction(['cdr_files', 'cdr_records'], 'readwrite');
+                const fileStore = tx.objectStore('cdr_files');
+                const recordStore = tx.objectStore('cdr_records');
+
+                fileStore.delete(fileId);
+
+                // Remove associated records
+                const req = recordStore.openCursor();
+                req.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        if (cursor.value.fileId === fileId) {
+                            cursor.delete();
+                        }
+                        cursor.continue();
+                    }
+                };
+
+                tx.oncomplete = () => {
+                    loadCDRFromIndexedDB().then(() => resolve());
+                };
+                tx.onerror = (e) => reject(e);
+            });
+        }
+
+        function clearAllCDRFromDB() {
+            return new Promise((resolve, reject) => {
+                if (!dbInstance) return reject('Database not ready');
+                const tx = dbInstance.transaction(['cdr_files', 'cdr_records'], 'readwrite');
+                tx.objectStore('cdr_files').clear();
+                tx.objectStore('cdr_records').clear();
+
+                tx.oncomplete = () => {
+                    cdrMasterFiles = [];
+                    cdrRecords = [];
+                    renderCDRMasterFileList();
+                    renderCDRResults();
+                    resolve();
+                };
+                tx.onerror = (e) => reject(e);
+            });
+        }
+
+        function deleteFileByName(fileName) {
+            if (!confirm(`Are you sure you want to delete file "${fileName}" and all its records?`)) return;
+            const tx = dbInstance.transaction('towers', 'readwrite');
+            const store = tx.objectStore('towers');
+
+            store.openCursor().onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    if (cursor.value.fileName === fileName) {
+                        cursor.delete();
+                    }
+                    cursor.continue();
+                }
+            };
+
+            tx.oncomplete = () => {
+                loadDatabaseFromIndexedDB().then(() => {
+                    performSearch();
+                    alert(`File "${fileName}" deleted successfully.`);
+                });
+            };
+        }
+
+        function clearDatabase() {
+            if (!confirm('Are you sure you want to clear ALL stored tower data?')) return;
+            if (!dbInstance) return;
+            const tx = dbInstance.transaction('towers', 'readwrite');
+            tx.objectStore('towers').clear();
+
+            tx.oncomplete = () => {
+                database = [];
+                updateDbStatusBadge('No Data (Upload CSV)');
+                renderFileList();
+                resetSearch();
+                closeModal();
+                alert('All database records cleared.');
+            };
+        }
+
+        // --- SERVER-SIDE SHARED DATABASE LOADER ---
+        // Loads CSV/Excel files that live on the hosting server itself (right next to this HTML file,
+        // at the site root - NOT in a subfolder, since some static hosts don't preserve subfolders
+        // reliably), so every visitor - in any browser, on any device - sees the same data automatically.
+        // Requires a files.json manifest listing the file names to load, e.g.:
+        //   ["grameenphone.csv", "robi.csv", "banglalink.xlsx"]
+        async function loadDatabaseFromServer() {
+            try {
+                const manifestResp = await fetch('files.json');
+                if (!manifestResp.ok) {
+                    console.warn('No files.json manifest found - skipping server database load.');
+                    return;
+                }
+                const fileList = await manifestResp.json();
+                if (!Array.isArray(fileList) || fileList.length === 0) return;
+
+                let serverRecords = [];
+                for (const fname of fileList) {
+                    try {
+                        const fileResp = await fetch(fname);
+                        if (!fileResp.ok) { console.warn('Could not load ' + fname); continue; }
+                        const buf = await fileResp.arrayBuffer();
+                        const data = new Uint8Array(buf);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+                        if (jsonData.length < 2) continue;
+                        serverRecords = serverRecords.concat(parseRowsToRecords(jsonData, fname));
+                    } catch (err) {
+                        console.error('Error loading server file', fname, err);
+                    }
+                }
+
+                if (serverRecords.length > 0) {
+                    // Avoid duplicating server records if this ever runs more than once
+                    serverRecords.forEach(r => { r.fromServer = true; });
+                    database = database.filter(r => !r.fromServer).concat(serverRecords);
+                    updateDbStatusBadge(`${database.length.toLocaleString()} Records Loaded`);
+                    renderFileList();
+                }
+            } catch (err) {
+                console.warn('Server database not loaded:', err);
+            }
+        }
+
+        function updateDbStatusBadge(text) {
+            document.getElementById('db-status-badge').innerHTML = `
+                <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+                <span>Database: ${text}</span>
+            `;
+        }
+
+        // --- THEME MANAGEMENT ---
+        function setTheme(theme) {
+            const html = document.documentElement;
+            const btnLight = document.getElementById('btn-theme-light');
+            const btnDark = document.getElementById('btn-theme-dark');
+            const btnSystem = document.getElementById('btn-theme-system');
+
+            const activeClass = "bg-white dark:bg-slate-800 text-ash-900 dark:text-white shadow-sm";
+            const inactiveClass = "text-ash-500 hover:text-ash-800 dark:hover:text-white";
+
+            btnLight.className = `flex items-center justify-center gap-1 text-xs font-semibold py-1.5 rounded-lg transition ${theme === 'light' ? activeClass : inactiveClass}`;
+            btnDark.className = `flex items-center justify-center gap-1 text-xs font-semibold py-1.5 rounded-lg transition ${theme === 'dark' ? activeClass : inactiveClass}`;
+            btnSystem.className = `flex items-center justify-center gap-1 text-xs font-semibold py-1.5 rounded-lg transition ${theme === 'system' ? activeClass : inactiveClass}`;
+
+            if (theme === 'system') {
+                localStorage.removeItem('theme');
+                if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    html.classList.add('dark');
+                } else {
+                    html.classList.remove('dark');
+                }
+            } else if (theme === 'dark') {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            }
+        }
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') setTheme('dark');
+            else if (savedTheme === 'light') setTheme('light');
+            else setTheme('system');
+        }
+
+        function switchMainTab(tabName) {
+            const usersSection = document.getElementById('section-users');
+            const lacSection = document.getElementById('section-lac-finder');
+            const imeiSection = document.getElementById('section-imei-check');
+            const cdrSection = document.getElementById('section-cdr-analyzer');
+            const lrlSection = document.getElementById('section-lrl-lcl');
+
+            const navUsers = document.getElementById('nav-users');
+            const navLac = document.getElementById('nav-lac-finder');
+            const navImei = document.getElementById('nav-imei-check');
+            const navCdr = document.getElementById('nav-cdr-analyzer');
+            const navLrl = document.getElementById('nav-lrl-lcl');
+            const activeTitle = document.getElementById('active-tab-title');
+
+            usersSection.classList.add('hidden');
+            lacSection.classList.add('hidden');
+            imeiSection.classList.add('hidden');
+            cdrSection.classList.add('hidden');
+            lrlSection.classList.add('hidden');
+
+            const inactiveNavStyle = "w-full text-left flex items-center gap-3 px-3 py-2 text-ash-600 dark:text-ash-300 hover:bg-ash-200/60 dark:hover:bg-slate-700 rounded-lg text-sm font-medium transition";
+            const activeNavStyle = "w-full text-left flex items-center gap-3 px-3 py-2 bg-sky-500 text-white rounded-xl text-sm font-semibold shadow-sm transition";
+
+            navLac.className = inactiveNavStyle;
+            navImei.className = inactiveNavStyle;
+            navCdr.className = inactiveNavStyle;
+            navLrl.className = inactiveNavStyle;
+            navUsers.className = "flex items-center gap-2 px-4 py-2 text-ash-700 dark:text-ash-200 bg-white dark:bg-slate-800 border border-ash-200 dark:border-slate-700 hover:bg-ash-100 dark:hover:bg-slate-700 rounded-xl text-sm font-semibold transition shadow-sm";
+
+            if (tabName === 'users') {
+                usersSection.classList.remove('hidden');
+                navUsers.className = "flex items-center gap-2 px-4 py-2 text-white bg-sky-600 border border-sky-600 rounded-xl text-sm font-semibold transition shadow-sm";
+                activeTitle.innerText = "Admin Panel & User Management";
+                renderUsersTable();
+            } else if (tabName === 'lac-finder') {
+                lacSection.classList.remove('hidden');
+                navLac.className = activeNavStyle;
+                activeTitle.innerText = "Lookup Cell & Tower Analysis";
+                setTimeout(() => map.invalidateSize(), 200);
+            } else if (tabName === 'cdr-analyzer') {
+                cdrSection.classList.remove('hidden');
+                navCdr.className = activeNavStyle;
+                activeTitle.innerText = "CDR Analyzer & Case Analytics";
+            } else if (tabName === 'lrl-lcl') {
+                lrlSection.classList.remove('hidden');
+                navLrl.className = activeNavStyle;
+                activeTitle.innerText = "LRL / LCL Analyzer";
+            } else {
+                imeiSection.classList.remove('hidden');
+                navImei.className = activeNavStyle;
+                activeTitle.innerText = "IMEI Lookup & Device Info";
+            }
+        }
+
+        // --- USER MANAGEMENT LOGIC ---
+        function renderUsersTable() {
+            const tbody = document.getElementById('users-table-body');
+            tbody.innerHTML = '';
+            const pendingCount = usersData.filter(u => u.status === 'Pending').length;
+            document.getElementById('user-count-total').innerText = usersData.length;
+            document.getElementById('pending-approval-badge').innerText = `${pendingCount} pending approval`;
+            document.getElementById('nav-pending-badge').innerText = pendingCount;
+
+            if (usersData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-ash-400">No users found. Create a user above to get started.</td></tr>`;
+                return;
+            }
+
+            usersData.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition";
+                const isPending = user.status === 'Pending';
+                const statusBadge = isPending ? `<span class="font-bold text-amber-600">Pending</span>` : `<span class="font-bold text-emerald-600">Approved</span>`;
+                const roleBadge = `<span class="bg-ash-100 dark:bg-slate-700 text-ash-600 dark:text-ash-300 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">${user.role}</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-3.5 pl-6 font-semibold text-ash-800 dark:text-ash-100">${user.name}</td>
+                    <td class="p-3.5 text-ash-600 dark:text-ash-300">${user.email}</td>
+                    <td class="p-3.5">${roleBadge}</td>
+                    <td class="p-3.5">${statusBadge}</td>
+                    <td class="p-3.5 text-ash-500">${user.joined}</td>
+                    <td class="p-3.5 pr-6 text-center">
+                        <button onclick="removeUser(${user.id})" class="bg-red-50 text-red-500 border border-red-200 px-3 py-1 rounded-full text-xs">Remove</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function handleCreateUser(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-user-name').value.trim();
+            const email = document.getElementById('new-user-email').value.trim();
+            const pass = document.getElementById('new-user-pass').value;
+            const confirm = document.getElementById('new-user-confirm').value;
+            const role = document.getElementById('new-user-role').value;
+
+            if (pass !== confirm) {
+                alert('Password and Confirm password do not match.');
+                return;
+            }
+            if (pass.length < 6) {
+                alert('Password must be at least 6 characters (Firebase requires this).');
+                return;
+            }
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Creating...'; }
+
+            // A second, temporary Firebase app instance creates the user so that the
+            // admin's own logged-in session (on the main "firebase" app) is untouched -
+            // otherwise createUserWithEmailAndPassword would sign the admin OUT and
+            // sign in as the new user instead.
+            const secondaryAppName = 'UserCreatorApp_' + Date.now();
+            let secondaryApp, secondaryAuth;
+            try {
+                secondaryApp = firebase.initializeApp(window.firebaseConfig, secondaryAppName);
+                secondaryAuth = secondaryApp.auth();
+                await secondaryAuth.createUserWithEmailAndPassword(email, pass);
+
+                usersData.unshift({ id: Date.now(), name, email, role, status: 'Approved', joined: new Date().toISOString().split('T')[0] });
+                renderUsersTable();
+                document.getElementById('add-user-form').reset();
+                alert(`User "${name}" (${email}) created successfully! They can now log in with this email and password.`);
+            } catch (err) {
+                alert('Could not create user: ' + err.message);
+            } finally {
+                if (secondaryAuth) await secondaryAuth.signOut().catch(() => {});
+                if (secondaryApp) await secondaryApp.delete().catch(() => {});
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Add User'; }
+            }
+        }
+
+        function removeUser(userId) {
+            // NOTE: this only removes the user from this local reminder list - it does NOT
+            // delete their Firebase account. To actually revoke access, delete the user
+            // in Firebase Console -> Authentication -> Users (deleting real accounts from
+            // here would need a secure backend, which this static site doesn't have).
+            usersData = usersData.filter(u => u.id !== userId);
+            renderUsersTable();
+        }
+
+        // --- CDR PARSING & MANAGEMENT ---
+        // BD mobile operator prefixes, as specified: 017/013=GP, 016/018=Robi, 014/019=Banglalink, 015=Teletalk
+        function detectOperatorFromNumber(num) {
+            if (!num) return 'Unknown';
+            const digits = String(num).replace(/[^0-9]/g, '');
+            const local = digits.slice(-11); // handles +880 / 880 country-code prefixes
+            if (local.length < 11) return 'Unknown';
+            const prefix = local.substring(0, 3);
+            if (prefix === '017' || prefix === '013') return 'Grameenphone';
+            if (prefix === '016' || prefix === '018') return 'Robi';
+            if (prefix === '014' || prefix === '019') return 'Banglalink';
+            if (prefix === '015') return 'Teletalk';
+            return 'Unknown';
+        }
+
+        async function handleCDRSubmit(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('cdr-file-input');
+            const files = fileInput.files;
+            if (!files || files.length === 0) return;
+
+            const suspectName = document.getElementById('cdr-suspect-name').value.trim() || 'N/A';
+            const referenceCase = document.getElementById('cdr-reference-case').value.trim() || 'N/A';
+            const operatorSelection = document.getElementById('cdr-operator-select').value;
+
+            const progressBox = document.getElementById('cdr-progress-box');
+            const progressBar = document.getElementById('cdr-progress-bar');
+            const progressPercent = document.getElementById('cdr-progress-percent');
+            const progressStatus = document.getElementById('cdr-progress-status');
+            progressBox.classList.remove('hidden');
+
+            for (let fIdx = 0; fIdx < files.length; fIdx++) {
+                const file = files[fIdx];
+                const fileId = 'cdr_file_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                progressStatus.innerText = `Parsing ${file.name}...`;
+
+                try {
+                    const parsedData = await parseSingleCDRFile(file);
+                    const fileRecords = parsedData.records.map(r => ({
+                        ...r,
+                        fileId,
+                        fileName: file.name,
+                        suspect: suspectName,
+                        caseRef: referenceCase,
+                        operator: operatorSelection === 'Auto Detect' ? detectOperatorFromNumber(r.target) : operatorSelection
+                    }));
+
+                    const fileOperator = operatorSelection === 'Auto Detect'
+                        ? (fileRecords.length > 0 ? fileRecords[0].operator : 'Unknown')
+                        : operatorSelection;
+
+                    const fileMeta = {
+                        id: fileId,
+                        fileName: file.name,
+                        suspect: suspectName,
+                        caseRef: referenceCase,
+                        operator: fileOperator,
+                        recordCount: fileRecords.length,
+                        uploadDate: new Date().toLocaleString()
+                    };
+
+                    await storeCDRToIndexedDB(fileMeta, fileRecords);
+
+                    const pct = Math.round(((fIdx + 1) / files.length) * 100);
+                    progressBar.style.width = pct + '%';
+                    progressPercent.innerText = pct + '%';
+                } catch (err) {
+                    console.error('Error parsing CDR:', err);
+                }
+            }
+
+            progressStatus.innerHTML = `<span class="text-emerald-600 font-bold">CDR Imported & Stored in IndexedDB!</span>`;
+            document.getElementById('cdr-upload-form').reset();
+        }
+
+        function parseSingleCDRFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false, dateNF: 'dd-mm-yyyy hh:mm:ss' });
+
+                        if (!jsonData || jsonData.length < 2) return resolve({ records: [] });
+
+                        const headers = jsonData[0].map(h => String(h).toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+
+                        // A-party / target number: try specific "A Party" style headers first
+                        let idxTarget = headers.findIndex(h => h === 'aparty' || h === 'a' || h.includes('callingnumber') || h.includes('callingparty'));
+                        if (idxTarget === -1) idxTarget = headers.findIndex(h => h.includes('target') || h.includes('msisdn') || h.includes('calling'));
+
+                        // B-party / other number: try specific "B Party" style headers first
+                        let idxOther = headers.findIndex(h => h === 'bparty' || h === 'b' || h.includes('callednumber') || h.includes('calledparty'));
+                        if (idxOther === -1) idxOther = headers.findIndex(h => h.includes('other') || h.includes('called') || h.includes('bparty'));
+
+                        let idxType = headers.findIndex(h => h === 'calltype' || (h.includes('type') && !h.includes('network')));
+                        let idxDuration = headers.findIndex(h => h.includes('dur') || h.includes('sec'));
+                        let idxLac = headers.findIndex(h => h === 'lac' || h === 'tac' || h.includes('lac'));
+                        let idxCell = headers.findIndex(h => h.includes('cell') || h.includes('cgi') || h === 'ci' || h === 'eci');
+                        let idxImei = headers.findIndex(h => h.includes('imei'));
+                        let idxImsi = headers.findIndex(h => h.includes('imsi'));
+                        let idxNetwork = headers.findIndex(h => h.includes('network') || h.includes('operator') || h.includes('carrier'));
+                        let idxCallerId = headers.findIndex(h => h.includes('callerid') || h.includes('callername'));
+
+                        // Date & Time: handle either one combined column, or separate Date + Time columns
+                        let idxDateCombined = headers.findIndex(h => (h.includes('date') && h.includes('time')) || h === 'timestamp' || h === 'datetime');
+                        let idxDateOnly = headers.findIndex(h => h === 'date');
+                        let idxTimeOnly = headers.findIndex(h => h === 'time');
+
+                        // Last-resort fallback: only use column 0/1 for target/other if truly nothing matched,
+                        // and never steal a column already claimed by date/time detection.
+                        const claimed = new Set([idxDateCombined, idxDateOnly, idxTimeOnly, idxNetwork, idxType, idxLac, idxCell, idxImei, idxImsi, idxCallerId].filter(i => i !== -1));
+                        if (idxTarget === -1 && !claimed.has(0)) idxTarget = 0;
+                        if (idxOther === -1 && !claimed.has(1) && idxTarget !== 1) idxOther = 1;
+
+                        const records = [];
+                        for (let i = 1; i < jsonData.length; i++) {
+                            const row = jsonData[i];
+                            if (!row || row.length === 0) continue;
+
+                            let dateTimeVal = 'N/A';
+                            if (idxDateCombined !== -1) {
+                                dateTimeVal = cleanVal(row[idxDateCombined]);
+                            } else if (idxDateOnly !== -1) {
+                                const datePart = cleanVal(row[idxDateOnly]);
+                                const timePart = idxTimeOnly !== -1 ? cleanVal(row[idxTimeOnly]) : '';
+                                dateTimeVal = timePart ? `${datePart} ${timePart}` : datePart;
+                            }
+
+                            const callType = idxType !== -1 ? cleanVal(row[idxType]) : 'Voice';
+
+                            records.push({
+                                target: idxTarget !== -1 ? (cleanVal(row[idxTarget]) || 'N/A') : 'N/A',
+                                other: idxOther !== -1 ? (cleanVal(row[idxOther]) || 'N/A') : 'N/A',
+                                type: callType || 'Voice',
+                                dateTime: dateTimeVal || 'N/A',
+                                duration: idxDuration !== -1 ? cleanVal(row[idxDuration]) : '0',
+                                lac: idxLac !== -1 ? cleanVal(row[idxLac]) : 'N/A',
+                                cellId: idxCell !== -1 ? cleanVal(row[idxCell]) : 'N/A',
+                                imei: idxImei !== -1 ? cleanVal(row[idxImei]) : 'N/A',
+                                imsi: idxImsi !== -1 ? cleanVal(row[idxImsi]) : 'N/A',
+                                network: idxNetwork !== -1 ? cleanVal(row[idxNetwork]) : 'N/A',
+                                callerId: idxCallerId !== -1 ? cleanVal(row[idxCallerId]) : 'N/A'
+                            });
+                        }
+                        resolve({ records });
+                    } catch (err) { reject(err); }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // MTC = Mobile Terminated Call (incoming), MOC = Mobile Originated Call (outgoing).
+        // Falls back to 'N/A' for SMS or anything else we can't classify.
+        function getCallDirection(type) {
+            const t = (type || '').toLowerCase();
+            if (t.includes('mtc') || t.includes('incoming') || t.includes('terminated')) return 'Incoming';
+            if (t.includes('moc') || t.includes('outgoing') || t.includes('originated')) return 'Outgoing';
+            return 'N/A';
+        }
+
+        function formatDuration(totalSeconds) {
+            const s = parseInt(totalSeconds) || 0;
+            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+            if (h > 0) return `${h}h ${m}m ${sec}s`;
+            if (m > 0) return `${m}m ${sec}s`;
+            return `${sec}s`;
+        }
+
+        function renderCDRMasterFileList() {
+            const tbody = document.getElementById('cdr-file-list-body');
+            document.getElementById('cdr-file-count').innerText = cdrMasterFiles.length;
+            if (cdrMasterFiles.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-ash-400">No CDR files stored in IndexedDB.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = '';
+            cdrMasterFiles.forEach(file => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-700/50 transition';
+                tr.innerHTML = `
+                    <td class="p-3.5 pl-5 font-bold text-ash-800 dark:text-ash-100">${file.fileName}</td>
+                    <td class="p-3.5 font-semibold text-sky-700">${file.suspect}</td>
+                    <td class="p-3.5 font-mono text-ash-600">${file.caseRef}</td>
+                    <td class="p-3.5 font-bold text-emerald-600">${file.recordCount.toLocaleString()} rows</td>
+                    <td class="p-3.5 text-ash-500 text-[11px]">${file.uploadDate}</td>
+                    <td class="p-3.5 pr-5 text-center">
+                        <button onclick="deleteCDRFile('${file.id}')" class="bg-red-50 text-red-600 border border-red-200 px-2.5 py-1 rounded-lg text-[11px]">Delete</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function deleteCDRFile(fileId) {
+            if (!confirm('Delete this CDR file from IndexedDB?')) return;
+            await deleteCDRFileFromDB(fileId);
+        }
+
+        async function clearAllCDRData() {
+            if (!confirm('Clear all CDR files and records from IndexedDB?')) return;
+            await clearAllCDRFromDB();
+        }
+
+        // --- Helpers for CDR analysis ---
+
+        // Figures out Morning/Afternoon/Night/Midnight from a date-time string.
+        // Tries to find an HH:MM(:SS) time pattern first (works regardless of date format/order),
+        // falls back to letting the JS Date parser figure it out.
+        function getPeriodLabel(dateTimeStr) {
+            if (!dateTimeStr || dateTimeStr === 'N/A') return 'Unknown';
+            let hour = null;
+            const timeMatch = String(dateTimeStr).match(/(\d{1,2}):(\d{2})(:\d{2})?/);
+            if (timeMatch) {
+                hour = parseInt(timeMatch[1], 10);
+            } else {
+                const d = new Date(dateTimeStr);
+                if (!isNaN(d.getTime())) hour = d.getHours();
+            }
+            if (hour === null || isNaN(hour)) return 'Unknown';
+            if (hour >= 0 && hour < 6) return 'Midnight';
+            if (hour >= 6 && hour < 12) return 'Morning';
+            if (hour >= 12 && hour < 18) return 'Afternoon';
+            return 'Night';
+        }
+
+        // Tries to parse a CDR date-time string into a real JS Date for sorting/range purposes.
+        // Handles both "DD-MM-YYYY HH:MM:SS" (common in BD CDR exports) and standard formats.
+        function parseCdrDate(dateTimeStr) {
+            if (!dateTimeStr || dateTimeStr === 'N/A') return null;
+            const s = String(dateTimeStr).trim();
+            const dmy = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})[\s,T]*(\d{1,2}):(\d{2})(:(\d{2}))?/);
+            if (dmy) {
+                let [, d, m, y, hh, mm, , ss] = dmy;
+                if (y.length === 2) y = '20' + y;
+                const dt = new Date(parseInt(y), parseInt(m) - 1, parseInt(d), parseInt(hh), parseInt(mm), ss ? parseInt(ss) : 0);
+                if (!isNaN(dt.getTime())) return dt;
+            }
+            const generic = new Date(s);
+            return isNaN(generic.getTime()) ? null : generic;
+        }
+
+        // ===== Generic pagination engine (10 rows/page, Previous/Next, like bdcdr) =====
+        const paginationConfig = {};
+        const paginationState = {};
+        const paginationData = {};
+
+        function setupPagination(key, tbodyId, barId, rowsPerPage, rowRenderFn, colSpanForEmpty) {
+            paginationConfig[key] = { tbodyId, barId, rowsPerPage, rowRenderFn, colSpanForEmpty };
+        }
+
+        function renderPaginatedTable(key, allItems) {
+            paginationData[key] = allItems;
+            if (!paginationState[key]) paginationState[key] = 1;
+            drawPaginatedTable(key);
+        }
+
+        function goToPage(key, page) {
+            const cfg = paginationConfig[key];
+            const allItems = paginationData[key] || [];
+            const totalPages = Math.max(1, Math.ceil(allItems.length / cfg.rowsPerPage));
+            paginationState[key] = Math.max(1, Math.min(page, totalPages));
+            drawPaginatedTable(key);
+        }
+
+        function drawPaginatedTable(key) {
+            const cfg = paginationConfig[key];
+            const allItems = paginationData[key] || [];
+            const totalItems = allItems.length;
+            const totalPages = Math.max(1, Math.ceil(totalItems / cfg.rowsPerPage));
+            if (paginationState[key] > totalPages) paginationState[key] = totalPages;
+            const page = paginationState[key];
+            const start = (page - 1) * cfg.rowsPerPage;
+            const pageItems = allItems.slice(start, start + cfg.rowsPerPage);
+
+            const tbody = document.getElementById(cfg.tbodyId);
+            if (tbody) {
+                tbody.innerHTML = totalItems === 0
+                    ? `<tr><td colspan="${cfg.colSpanForEmpty}" class="text-center py-8 text-ash-400">No data yet.</td></tr>`
+                    : pageItems.map((item, idx) => cfg.rowRenderFn(item, start + idx)).join('');
+            }
+
+            const bar = document.getElementById(cfg.barId);
+            if (bar) {
+                if (totalItems === 0) {
+                    bar.innerHTML = '';
+                } else {
+                    const from = start + 1, to = start + pageItems.length;
+                    let startPage = Math.max(1, page - 2);
+                    let endPage = Math.min(totalPages, startPage + 4);
+                    startPage = Math.max(1, endPage - 4);
+                    let pageBtns = '';
+                    for (let p = startPage; p <= endPage; p++) {
+                        pageBtns += `<button onclick="goToPage('${key}', ${p})" class="min-w-[28px] h-7 px-1.5 rounded-lg text-xs font-bold transition ${p === page ? 'bg-emerald-600 text-white' : 'bg-ash-100 dark:bg-slate-700 text-ash-600 dark:text-ash-300 hover:bg-ash-200 dark:hover:bg-slate-600'}">${p}</button>`;
+                    }
+                    bar.innerHTML = `
+                        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-t border-ash-100 dark:border-slate-700 text-xs">
+                            <span class="text-ash-500 dark:text-ash-400">Showing ${from} to ${to} of ${totalItems} records</span>
+                            <div class="flex items-center gap-1.5">
+                                <button onclick="goToPage('${key}', ${page - 1})" ${page <= 1 ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg font-bold transition ${page <= 1 ? 'text-ash-300 dark:text-slate-600 cursor-not-allowed' : 'text-ash-600 dark:text-ash-300 hover:bg-ash-100 dark:hover:bg-slate-700'}">Previous</button>
+                                ${pageBtns}
+                                <button onclick="goToPage('${key}', ${page + 1})" ${page >= totalPages ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg font-bold transition ${page >= totalPages ? 'text-ash-300 dark:text-slate-600 cursor-not-allowed' : 'text-ash-600 dark:text-ash-300 hover:bg-ash-100 dark:hover:bg-slate-700'}">Next</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Register each paginated table once (row templates reference the row object's own fields)
+        setupPagination('cdr-inspect', 'cdr-table-body', 'cdr-inspect-pagination', 10, (item, idx) => {
+            const period = getPeriodLabel(item.dateTime);
+            return `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+                    <td class="p-3 font-semibold text-ash-400">${idx + 1}</td>
+                    <td class="p-3 font-semibold">${item.suspect} (${item.caseRef})</td>
+                    <td class="p-3 font-bold text-sky-700">${item.target}</td>
+                    <td class="p-3 font-semibold">${item.other}</td>
+                    <td class="p-3">${item.type}</td>
+                    <td class="p-3">${item.dateTime}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-ash-100 dark:bg-slate-700 text-ash-600 dark:text-ash-300">${period}</span></td>
+                    <td class="p-3">${item.duration}</td>
+                    <td class="p-3 font-semibold text-purple-700">${item.lac}</td>
+                    <td class="p-3 font-semibold text-purple-700">${item.cellId}</td>
+                    <td class="p-3 font-mono text-ash-500">${item.imei}</td>
+                    <td class="p-3 font-mono text-ash-500">${item.imsi}</td>
+                </tr>
+            `;
+        }, 12);
+
+        setupPagination('cdr-common', 'cdr-common-numbers-body', 'cdr-common-pagination', 10, (r, idx) => `
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+                <td class="p-3 font-semibold text-ash-400">${idx + 1}</td>
+                <td class="p-3 font-bold text-sky-700">${r.num}</td>
+                <td class="p-3 font-bold text-emerald-600">${r.total}</td>
+                <td class="p-3">${r.outCalls}</td>
+                <td class="p-3">${r.inCalls}</td>
+                <td class="p-3">${r.outSms}</td>
+                <td class="p-3">${r.inSms}</td>
+                <td class="p-3">${formatDuration(r.duration)}</td>
+                <td class="p-3">${r.activeDays}</td>
+                <td class="p-3 text-[11px]">${r.fileBreakdown}</td>
+                <td class="p-3 text-[11px] text-ash-500">${r.first ? r.first.toLocaleString() : '-'}</td>
+                <td class="p-3 text-[11px] text-ash-500">${r.last ? r.last.toLocaleString() : '-'}</td>
+            </tr>
+        `, 12);
+
+        setupPagination('cdr-location', 'cdr-location-body', 'cdr-location-pagination', 10, (r, idx) => {
+            const mapBtn = `<button onclick='openTowerMapModalFromLocation(${idx})' class="text-sky-600 hover:underline font-semibold"><i class="fa-solid fa-map-location-dot mr-1"></i>Map</button>`;
+            return `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+                    <td class="p-3 font-semibold text-ash-400">${idx + 1}</td>
+                    <td class="p-3">${r.match ? (r.match.address || '-') : '<span class="text-ash-300 italic">Not matched</span>'}</td>
+                    <td class="p-3 font-semibold text-purple-700">${r.lac} / ${r.cellId}</td>
+                    <td class="p-3 font-bold text-emerald-600">${r.visits}</td>
+                    <td class="p-3">${r.incoming}</td>
+                    <td class="p-3">${r.outgoing}</td>
+                    <td class="p-3">${formatDuration(r.duration)}</td>
+                    <td class="p-3 text-[11px] text-ash-500">${r.first ? r.first.toLocaleDateString() : '-'}</td>
+                    <td class="p-3 text-[11px] text-ash-500">${r.last ? r.last.toLocaleDateString() : '-'}</td>
+                    <td class="p-3">${mapBtn}</td>
+                </tr>
+            `;
+        }, 10);
+
+        setupPagination('cdr-imei', 'cdr-imei-period-body', 'cdr-imei-pagination', 10, (r, idx) => `
+            <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+                <td class="p-3 font-semibold text-ash-400">${idx + 1}</td>
+                <td class="p-3 font-mono font-bold text-ash-800 dark:text-ash-100">${r.imei}</td>
+                <td class="p-3">${r.info ? `${r.info.brand} - ${r.info.model}${r.info.name && r.info.name !== r.info.model ? ' (' + r.info.name + ')' : ''}` : '<span class="text-ash-300 italic">Unknown</span>'}</td>
+                <td class="p-3 font-bold text-emerald-600">${r.count}</td>
+                <td class="p-3 text-[11px] text-ash-500">${r.first ? r.first.toLocaleString() : '-'}</td>
+                <td class="p-3 text-[11px] text-ash-500">${r.last ? r.last.toLocaleString() : '-'}</td>
+            </tr>
+        `, 6);
+
+        function switchCdrSubTab(tabName) {
+            ['summary', 'inspect', 'common', 'location', 'imei'].forEach(name => {
+                const panel = document.getElementById('cdr-panel-' + name);
+                const btn = document.getElementById('cdr-subtab-btn-' + name);
+                if (panel) panel.classList.toggle('hidden', name !== tabName);
+                if (btn) btn.classList.toggle('active', name === tabName);
+            });
+        }
+
+        function renderCDRResults(recordsToRender = null) {
+            const displayRecords = recordsToRender || cdrRecords;
+            document.getElementById('cdr-summary-text').innerText = `${cdrRecords.length.toLocaleString()} CDR Records Loaded`;
+
+            if (cdrRecords.length === 0) {
+                document.getElementById('cdr-subtabs-bar').classList.add('hidden');
+                document.getElementById('cdr-date-filter-bar').classList.add('hidden');
+                ['summary', 'inspect', 'common', 'location', 'imei'].forEach(name => {
+                    document.getElementById('cdr-panel-' + name).classList.add('hidden');
+                });
+                return;
+            }
+
+            document.getElementById('cdr-subtabs-bar').classList.remove('hidden');
+            document.getElementById('cdr-date-filter-bar').classList.remove('hidden');
+            if (document.querySelectorAll('.cdr-subtab-btn.active').length === 0) {
+                switchCdrSubTab('summary');
+            }
+
+            renderPaginatedTable('cdr-inspect', displayRecords);
+            renderSummaryPanel(displayRecords);
+            renderCommonNumbersPanel(displayRecords);
+            renderLocationPanel(displayRecords);
+            renderImeiPeriodPanel(displayRecords);
+        }
+
+        // ===== Date / Type / Direction filter bar (applies across all 5 sub-tabs) =====
+        function applyQuickDateFilter() {
+            const days = parseInt(document.getElementById('cdr-filter-quick-date').value);
+            if (!days) return;
+            const end = new Date();
+            const start = new Date();
+            start.setDate(start.getDate() - days);
+            document.getElementById('cdr-filter-start-date').value = start.toISOString().split('T')[0];
+            document.getElementById('cdr-filter-end-date').value = end.toISOString().split('T')[0];
+            applyCdrFilters();
+        }
+
+        function applyCdrFilters() {
+            const startVal = document.getElementById('cdr-filter-start-date').value;
+            const endVal = document.getElementById('cdr-filter-end-date').value;
+            const typeVal = document.getElementById('cdr-filter-type').value; // '', 'voice', 'sms'
+            const dirVal = document.getElementById('cdr-filter-direction').value; // '', 'Incoming', 'Outgoing'
+
+            const startDate = startVal ? new Date(startVal + 'T00:00:00') : null;
+            const endDate = endVal ? new Date(endVal + 'T23:59:59') : null;
+
+            const filtered = cdrRecords.filter(r => {
+                if (startDate || endDate) {
+                    const d = parseCdrDate(r.dateTime);
+                    if (!d) return false;
+                    if (startDate && d < startDate) return false;
+                    if (endDate && d > endDate) return false;
+                }
+                if (typeVal) {
+                    const isSms = (r.type || '').toLowerCase().includes('sms');
+                    if (typeVal === 'sms' && !isSms) return false;
+                    if (typeVal === 'voice' && isSms) return false;
+                }
+                if (dirVal && getCallDirection(r.type) !== dirVal) return false;
+                return true;
+            });
+
+            const parts = [];
+            if (startVal || endVal) parts.push(`${startVal || '...'} to ${endVal || '...'}`);
+            if (typeVal) parts.push(typeVal === 'sms' ? 'SMS only' : 'Voice calls only');
+            if (dirVal) parts.push(dirVal + ' only');
+            document.getElementById('cdr-filter-status').innerText = parts.length
+                ? `Filter active (${parts.join(', ')}): showing ${filtered.length.toLocaleString()} of ${cdrRecords.length.toLocaleString()} records`
+                : '';
+
+            renderCDRResults(filtered);
+        }
+
+        function resetCdrFilters() {
+            document.getElementById('cdr-filter-start-date').value = '';
+            document.getElementById('cdr-filter-end-date').value = '';
+            document.getElementById('cdr-filter-quick-date').value = '';
+            document.getElementById('cdr-filter-type').value = '';
+            document.getElementById('cdr-filter-direction').value = '';
+            document.getElementById('cdr-filter-status').innerText = '';
+            renderCDRResults(cdrRecords);
+        }
+
+        function renderSummaryPanel(records) {
+            document.getElementById('stat-total-calls').innerText = records.length.toLocaleString();
+            document.getElementById('stat-unique-targets').innerText = new Set(records.map(r => r.target)).size;
+            document.getElementById('stat-unique-others').innerText = new Set(records.map(r => r.other)).size;
+            document.getElementById('stat-unique-cells').innerText = new Set(records.map(r => `${r.lac}-${r.cellId}`)).size;
+
+            let voiceCount = 0, smsCount = 0, totalDuration = 0;
+            let minDate = null, maxDate = null;
+            const periodCounts = { Morning: 0, Afternoon: 0, Night: 0, Midnight: 0, Unknown: 0 };
+
+            records.forEach(r => {
+                const typeLower = (r.type || '').toLowerCase();
+                if (typeLower.includes('sms')) smsCount++;
+                else voiceCount++;
+                totalDuration += parseInt(r.duration) || 0;
+
+                const period = getPeriodLabel(r.dateTime);
+                periodCounts[period] = (periodCounts[period] || 0) + 1;
+
+                const d = parseCdrDate(r.dateTime);
+                if (d) {
+                    if (!minDate || d < minDate) minDate = d;
+                    if (!maxDate || d > maxDate) maxDate = d;
+                }
+            });
+
+            document.getElementById('stat-voice-count').innerText = voiceCount.toLocaleString();
+            document.getElementById('stat-sms-count').innerText = smsCount.toLocaleString();
+            document.getElementById('stat-total-duration').innerText = formatDuration(totalDuration);
+            document.getElementById('stat-date-range').innerText = (minDate && maxDate)
+                ? `${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`
+                : 'Unknown';
+
+            const periodBox = document.getElementById('summary-period-breakdown');
+            const periodIcons = { Morning: 'fa-sun', Afternoon: 'fa-cloud-sun', Night: 'fa-moon', Midnight: 'fa-star' };
+            const periodColors = { Morning: 'text-amber-500', Afternoon: 'text-orange-500', Night: 'text-indigo-500', Midnight: 'text-purple-600' };
+            periodBox.innerHTML = ['Morning', 'Afternoon', 'Night', 'Midnight'].map(p => `
+                <div class="bg-ash-50 dark:bg-slate-900/50 rounded-xl p-3.5 text-center border border-ash-100 dark:border-slate-700">
+                    <i class="fa-solid ${periodIcons[p]} ${periodColors[p]} text-lg mb-1.5"></i>
+                    <div class="text-lg font-bold text-ash-800 dark:text-ash-100">${(periodCounts[p] || 0).toLocaleString()}</div>
+                    <div class="text-[11px] font-semibold text-ash-500 dark:text-ash-400">${p}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderCommonNumbersPanel(records) {
+            const map = {};
+            records.forEach(r => {
+                const num = r.other || 'N/A';
+                if (!map[num]) map[num] = { outCalls: 0, inCalls: 0, outSms: 0, inSms: 0, duration: 0, first: null, last: null, files: {}, days: new Set() };
+                const entry = map[num];
+                const typeLower = (r.type || '').toLowerCase();
+                const dir = getCallDirection(r.type);
+                const isSms = typeLower.includes('sms');
+
+                if (isSms) {
+                    if (dir === 'Incoming') entry.inSms++; else entry.outSms++;
+                } else {
+                    if (dir === 'Incoming') entry.inCalls++; else entry.outCalls++;
+                    entry.duration += parseInt(r.duration) || 0;
+                }
+
+                // Track which uploaded CDR (by suspect/target number) this contact came from, and how many times
+                const fileLabel = (r.suspect && r.suspect !== 'N/A') ? r.suspect : r.target;
+                entry.files[fileLabel] = (entry.files[fileLabel] || 0) + 1;
+
+                const d = parseCdrDate(r.dateTime);
+                if (d) {
+                    if (!entry.first || d < entry.first) entry.first = d;
+                    if (!entry.last || d > entry.last) entry.last = d;
+                    entry.days.add(d.toDateString());
+                }
+            });
+
+            const rows = Object.entries(map)
+                .map(([num, v]) => ({
+                    num,
+                    total: v.outCalls + v.inCalls + v.outSms + v.inSms,
+                    activeDays: v.days.size,
+                    fileBreakdown: Object.entries(v.files).map(([label, count]) => `${label} (${count}x)`).join(', '),
+                    ...v
+                }))
+                .sort((a, b) => b.total - a.total);
+
+            renderPaginatedTable('cdr-common', rows);
+        }
+
+        // Stores the currently-rendered Location (EST) page's rows so the Map button can look them up by index
+        let currentLocationPageRows = [];
+
+        function renderLocationPanel(records) {
+            // Build a quick lookup index of the tower database by "lac|cellId" (case-insensitive)
+            const towerIndex = {};
+            database.forEach(t => {
+                const key = String(t.lac).trim().toLowerCase() + '|' + String(t.cellId).trim().toLowerCase();
+                towerIndex[key] = t;
+            });
+
+            const map = {};
+            records.forEach(r => {
+                const key = `${r.lac}|${r.cellId}`;
+                if (!map[key]) map[key] = { lac: r.lac, cellId: r.cellId, visits: 0, incoming: 0, outgoing: 0, duration: 0, first: null, last: null, numbers: new Set() };
+                const entry = map[key];
+                entry.visits++;
+                entry.duration += parseInt(r.duration) || 0;
+                const dir = getCallDirection(r.type);
+                if (dir === 'Incoming') entry.incoming++;
+                else if (dir === 'Outgoing') entry.outgoing++;
+                if (r.target && r.target !== 'N/A') entry.numbers.add(r.target);
+                const d = parseCdrDate(r.dateTime);
+                if (d) {
+                    if (!entry.first || d < entry.first) entry.first = d;
+                    if (!entry.last || d > entry.last) entry.last = d;
+                }
+            });
+
+            const rows = Object.values(map).map(r => {
+                const lookupKey = String(r.lac).trim().toLowerCase() + '|' + String(r.cellId).trim().toLowerCase();
+                return { ...r, match: towerIndex[lookupKey] || null, activeNumbers: Array.from(r.numbers) };
+            }).sort((a, b) => b.visits - a.visits);
+
+            document.getElementById('cdr-location-title').innerText = `Estimated Locations Visited (${rows.length} towers)`;
+
+            currentLocationPageRows = rows; // full set - openTowerMapModalFromLocation looks up by absolute index via data-idx
+            renderPaginatedTable('cdr-location', rows);
+        }
+
+        // Called from the Map button - idx is the absolute index into currentLocationPageRows (set at render time)
+        function openTowerMapModalFromLocation(idx) {
+            const r = paginationData['cdr-location'][idx];
+            if (!r) return;
+            openTowerMapModal(r.match, {
+                lac: r.lac,
+                cellId: r.cellId,
+                visits: r.visits,
+                firstSeen: r.first,
+                lastSeen: r.last,
+                activeNumbers: r.activeNumbers
+            });
+        }
+
+        function renderImeiPeriodPanel(records) {
+            const map = {};
+            records.forEach(r => {
+                const imei = r.imei || 'N/A';
+                if (imei === 'N/A') return;
+                if (!map[imei]) map[imei] = { count: 0, first: null, last: null };
+                map[imei].count++;
+                const d = parseCdrDate(r.dateTime);
+                if (d) {
+                    if (!map[imei].first || d < map[imei].first) map[imei].first = d;
+                    if (!map[imei].last || d > map[imei].last) map[imei].last = d;
+                }
+            });
+
+            const rows = Object.entries(map)
+                .map(([imei, v]) => {
+                    const tac8 = imei.replace(/[^0-9]/g, '').substring(0, 8);
+                    const tac6 = imei.replace(/[^0-9]/g, '').substring(0, 6);
+                    return { imei, info: TAC_DATABASE[tac8] || TAC_DATABASE[tac6] || null, ...v };
+                })
+                .sort((a, b) => (b.last || 0) - (a.last || 0));
+
+            renderPaginatedTable('cdr-imei', rows);
+        }
+
+        function filterCDRTable() {
+            const query = document.getElementById('cdr-table-filter').value.toLowerCase();
+            if (!query) { renderPaginatedTable('cdr-inspect', cdrRecords); return; }
+            const filtered = cdrRecords.filter(r =>
+                Object.values(r).join(' ').toLowerCase().includes(query)
+            );
+            renderPaginatedTable('cdr-inspect', filtered);
+        }
+
+        // ===== Tower Map View modal (shared by Location (EST) and LRL/LCL Analyzer) =====
+        let towerModalMapInstance = null;
+
+        function openTowerMapModal(towerMatch, meta) {
+            document.getElementById('tower-map-modal').classList.remove('hidden');
+
+            const lat = towerMatch ? parseFloat(towerMatch.lat) : null;
+            const lng = towerMatch ? parseFloat(towerMatch.long) : null;
+            const azimuth = towerMatch ? (parseFloat(towerMatch.azimuth) || 0) : 0;
+            const hasCoords = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
+
+            document.getElementById('tower-modal-subtitle').innerText = towerMatch
+                ? `LAC: ${meta.lac} · Cell ID: ${meta.cellId} · ${towerMatch.address || ''} · ${meta.visits || 0} hits`
+                : `LAC: ${meta.lac || 'N/A'} · Cell ID: ${meta.cellId || 'N/A'} · Not matched in tower database`;
+
+            document.getElementById('tower-modal-lat').innerText = 'Lat: ' + (hasCoords ? lat.toFixed(6) : 'N/A');
+            document.getElementById('tower-modal-lng').innerText = 'Lng: ' + (hasCoords ? lng.toFixed(6) : 'N/A');
+            document.getElementById('tower-modal-azimuth').innerText = 'Azimuth: ' + azimuth.toFixed(1) + '°';
+            document.getElementById('tower-modal-beamwidth').innerText = 'Beam Width: 65.0°';
+            document.getElementById('tower-modal-address').innerText = (towerMatch && towerMatch.address) ? towerMatch.address : 'Not matched in tower database';
+            document.getElementById('tower-modal-seen').innerText = (meta.firstSeen && meta.lastSeen)
+                ? `${meta.firstSeen.toLocaleString()} — ${meta.lastSeen.toLocaleString()}`
+                : 'Unknown';
+            document.getElementById('tower-modal-numbers').innerHTML = (meta.activeNumbers && meta.activeNumbers.length)
+                ? meta.activeNumbers.map(n => `<span class="inline-block bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-lg mr-1 mb-1">${n}</span>`).join('')
+                : 'N/A';
+
+            window._towerModalCoords = hasCoords ? `${lat}, ${lng}` : '';
+
+            setTimeout(() => {
+                if (towerModalMapInstance) { towerModalMapInstance.remove(); towerModalMapInstance = null; }
+                const mapDiv = document.getElementById('tower-modal-map');
+                if (hasCoords) {
+                    mapDiv.innerHTML = '';
+                    towerModalMapInstance = L.map('tower-modal-map', { center: [lat, lng], zoom: 16 });
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(towerModalMapInstance);
+                    try {
+                        const sectorGeoJson = turf.sector([lng, lat], 0.45, azimuth - 32.5, azimuth + 32.5);
+                        L.geoJSON(sectorGeoJson, { style: { color: '#dc2626', weight: 1.5, fillColor: '#dc2626', fillOpacity: 0.35 } }).addTo(towerModalMapInstance);
+                    } catch (e) {}
+                    L.marker([lat, lng]).addTo(towerModalMapInstance);
+                } else {
+                    mapDiv.innerHTML = '<div class="flex items-center justify-center h-full text-ash-400 text-xs">No coordinates available for this tower.</div>';
+                }
+            }, 60);
+        }
+
+        function closeTowerMapModal() {
+            document.getElementById('tower-map-modal').classList.add('hidden');
+            if (towerModalMapInstance) { towerModalMapInstance.remove(); towerModalMapInstance = null; }
+        }
+
+        function copyTowerModalCoords() {
+            if (window._towerModalCoords) {
+                navigator.clipboard.writeText(window._towerModalCoords);
+                alert('Coordinates copied!');
+            } else {
+                alert('No coordinates available to copy.');
+            }
+        }
+
+        // --- CELL TOWER CSV UPLOAD & SEARCH ---
+        // Shared column-detection parser: turns a sheet_to_json (header:1) array into tower records.
+        // Used both by the admin "Upload to DB" button and by the server-file auto-loader below.
+        function parseRowsToRecords(jsonData, fileName) {
+            const headers = jsonData[0].map(h => String(h).toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+            let idxOp = headers.findIndex(h => h.includes('op') || h.includes('operator') || h.includes('provider') || h.includes('network') || h.includes('mnc') || h.includes('mcc'));
+            let idxLac = headers.findIndex(h => h.includes('lac') || h.includes('tac'));
+            let idxCell = headers.findIndex(h => h.includes('cell') || h.includes('eci') || h.includes('ci'));
+            let idxLat = headers.findIndex(h => h.includes('lat'));
+            let idxLong = headers.findIndex(h => h.includes('long') || h.includes('lon'));
+            let idxAz = headers.findIndex(h => h.includes('azimuth') || h.includes('dir'));
+            let idxAddr = headers.findIndex(h => h.includes('addr') || h.includes('location'));
+            let idxDist = headers.findIndex(h => h.includes('dist') || h.includes('zila'));
+            let idxThana = headers.findIndex(h => h.includes('thana') || h.includes('upazila'));
+
+            const records = [];
+            for (let i = 1; i < jsonData.length; i++) {
+                const row = jsonData[i];
+                if (!row || row.length === 0) continue;
+                records.push({
+                    fileName: fileName,
+                    operator: idxOp !== -1 ? cleanVal(row[idxOp]) : 'Unknown',
+                    lac: idxLac !== -1 ? cleanVal(row[idxLac]) : '',
+                    cellId: idxCell !== -1 ? cleanVal(row[idxCell]) : '',
+                    lat: idxLat !== -1 ? cleanVal(row[idxLat]) : '0',
+                    long: idxLong !== -1 ? cleanVal(row[idxLong]) : '0',
+                    azimuth: idxAz !== -1 ? cleanVal(row[idxAz]) : '0',
+                    address: idxAddr !== -1 ? cleanVal(row[idxAddr]) : '',
+                    district: idxDist !== -1 ? cleanVal(row[idxDist]) : '',
+                    thana: idxThana !== -1 ? cleanVal(row[idxThana]) : ''
+                });
+            }
+            return records;
+        }
+
+        function handleFileUpload() {
+            const fileInput = document.getElementById('csv-file-input');
+            const file = fileInput.files[0];
+            if (!file) return alert('Please select a CSV or Excel file.');
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+                    if (jsonData.length < 2) return alert('Invalid or empty file.');
+
+                    const newRecords = parseRowsToRecords(jsonData, file.name);
+
+                    await storeNewRecords(newRecords);
+                    closeModal();
+                    alert(`Successfully imported ${newRecords.length.toLocaleString()} records into IndexedDB!\n\nNote: this only saves in THIS browser. To make the data visible to every visitor, put the CSV/Excel file next to this HTML file on your hosting and list it in files.json — see the guide provided.`);
+                } catch (err) {
+                    alert('Error parsing file: ' + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderFileList() {
+            const container = document.getElementById('uploaded-files-list');
+            if (!container) return;
+            const fileGroups = {};
+            database.forEach(item => {
+                const fName = item.fileName || 'Unknown File';
+                fileGroups[fName] = (fileGroups[fName] || 0) + 1;
+            });
+            const fileNames = Object.keys(fileGroups);
+            if (fileNames.length === 0) {
+                container.innerHTML = `<div class="text-xs text-ash-400 py-3 text-center bg-ash-50 dark:bg-slate-900 rounded-xl">No files uploaded yet.</div>`;
+                return;
+            }
+            container.innerHTML = '';
+            fileNames.forEach(fName => {
+                const count = fileGroups[fName];
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2.5 bg-ash-50 dark:bg-slate-900 border border-ash-200 dark:border-slate-700 rounded-xl text-xs';
+                div.innerHTML = `
+                    <div class="flex items-center gap-2 overflow-hidden mr-2">
+                        <i class="fa-solid fa-file-csv text-sky-600 text-sm"></i>
+                        <span class="font-semibold text-ash-800 dark:text-ash-100 truncate">${fName}</span>
+                        <span class="text-[10px] text-ash-500">(${count.toLocaleString()} rows)</span>
+                    </div>
+                    <button onclick="deleteFileByName('${fName.replace(/'/g, "\\'")}')" class="text-red-500 hover:text-red-700 p-1"><i class="fa-solid fa-trash-can"></i></button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // --- MAP & SEARCH FUNCTIONS ---
+        function initMap() {
+            map = L.map('map', { center: [23.8103, 90.4125], zoom: 12, layers: [hybridLayer] });
+            mapLayersGroup.addTo(map);
+        }
+
+        function switchMapLayer(type) {
+            document.querySelectorAll('.map-type-btn').forEach(btn => btn.classList.remove('active'));
+            map.removeLayer(streetLayer);
+            map.removeLayer(satLayer);
+            map.removeLayer(hybridLayer);
+
+            if (type === 'street') { map.addLayer(streetLayer); document.getElementById('btn-street').classList.add('active'); }
+            else if (type === 'sat') { map.addLayer(satLayer); document.getElementById('btn-sat').classList.add('active'); }
+            else { map.addLayer(hybridLayer); document.getElementById('btn-hybrid').classList.add('active'); }
+        }
+
+        function formatOperatorName(op) {
+            if (!op) return 'Unknown Operator';
+            const upper = String(op).toUpperCase().trim();
+            if (upper.includes('GRAMEEN')) return 'GrameenPhone';
+            if (upper.includes('ROBI')) return 'Robi';
+            if (upper.includes('BANGLA')) return 'Banglalink';
+            if (upper.includes('TELETALK')) return 'Teletalk';
+            return op;
+        }
+
+        function getOperatorColor(op) {
+            const name = formatOperatorName(op);
+            if (name === 'GrameenPhone') return '#0284c7';
+            if (name === 'Robi') return '#ef4444';
+            if (name === 'Banglalink') return '#eab308';
+            if (name === 'Teletalk') return '#22c55e';
+            return '#0284c7';
+        }
+
+        function performSearch() {
+            const rows = document.querySelectorAll('.search-row');
+            const queries = [];
+            rows.forEach(row => {
+                const lac = cleanVal(row.querySelector('.lac-input').value);
+                const cell = cleanVal(row.querySelector('.cell-input').value);
+                if (lac || cell) queries.push({ lac, cell });
+            });
+
+            const resultsTable = document.getElementById('results-table-body');
+            resultsTable.innerHTML = '';
+
+            if (database.length === 0) {
+                resultsTable.innerHTML = `<tr><td colspan="11" class="text-center py-6 text-ash-400">IndexedDB is empty. Upload a CSV/Excel file via Admin.</td></tr>`;
+                return;
+            }
+
+            const matched = database.filter(item => {
+                return queries.some(q => {
+                    if (q.lac && q.cell) return item.lac === q.lac && item.cellId === q.cell;
+                    if (q.lac) return item.lac === q.lac;
+                    if (q.cell) return item.cellId === q.cell;
+                    return false;
+                });
+            });
+
+            if (matched.length === 0) {
+                resultsTable.innerHTML = `<tr><td colspan="11" class="text-center py-6 text-ash-400">No matching records found.</td></tr>`;
+                mapLayersGroup.clearLayers();
+                document.getElementById('distance-summary-badge').classList.add('hidden');
+                return;
+            }
+
+            matched.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-sky-50/50 transition';
+                tr.innerHTML = `
+                    <td class="p-3"><span class="bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold">${formatOperatorName(item.operator)}</span></td>
+                    <td class="p-3 font-semibold">${item.lac}</td>
+                    <td class="p-3 font-semibold">${item.cellId}</td>
+                    <td class="p-3">${item.lat}</td>
+                    <td class="p-3">${item.long}</td>
+                    <td class="p-3 font-bold text-sky-700">${item.azimuth}°</td>
+                    <td class="p-3 truncate max-w-xs">${item.address || '-'}</td>
+                    <td class="p-3">${item.district || '-'}</td>
+                    <td class="p-3">${item.thana || '-'}</td>
+                    <td class="p-3"><a href="https://maps.google.com/?q=${item.lat},${item.long}" target="_blank" class="text-red-600 font-semibold underline">Open Map</a></td>
+                    <td class="p-3 text-center"><button onclick="focusOnMap(${item.lat}, ${item.long})" class="text-sky-600">Focus</button></td>
+                `;
+                resultsTable.appendChild(tr);
+            });
+
+            renderMultipleCellsOnMap(matched);
+        }
+
+        function renderMultipleCellsOnMap(cellList) {
+            mapLayersGroup.clearLayers();
+            const bounds = [];
+            const points = [];
+
+            cellList.forEach(item => {
+                const lat = parseFloat(item.lat);
+                const long = parseFloat(item.long);
+                if (isNaN(lat) || isNaN(long)) return;
+
+                const latLng = [lat, long];
+                bounds.push(latLng);
+                points.push({ latLng, item });
+
+                const azimuth = parseFloat(item.azimuth) || 0;
+                const cellColor = getOperatorColor(item.operator);
+
+                // Create Sector Layer
+                let sectorLayer;
+                try {
+                    const sectorGeoJson = turf.sector([long, lat], 0.45, azimuth - 30, azimuth + 30);
+                    sectorLayer = L.geoJSON(sectorGeoJson, {
+                        style: { color: cellColor, weight: 1.5, fillColor: cellColor, fillOpacity: 0.45 }
+                    }).addTo(mapLayersGroup);
+                } catch(e) {}
+
+                // Build Sector Label Text: e.g. 42349|10841346|190
+                const sectorLabelText = `${item.lac}|${item.cellId}|${item.azimuth}`;
+
+                // Add Sector Label on Map Area (Requirement 2)
+                L.marker([lat, long], {
+                    icon: L.divIcon({
+                        className: 'sector-body-label',
+                        html: sectorLabelText,
+                        iconSize: [120, 24],
+                        iconAnchor: [60, 12]
+                    }),
+                    interactive: false
+                }).addTo(mapLayersGroup);
+
+                // Build Popup Content (Requirement 3)
+                const opName = formatOperatorName(item.operator);
+                const popupContent = `
+                    <div class="cell-popup-title">${opName} 4G</div>
+                    <div class="cell-popup-details">LAC ${item.lac} · CELL ${item.cellId} · AZ ${item.azimuth}</div>
+                    <div class="cell-popup-address">${item.address || ''}</div>
+                    <div class="cell-popup-coords">${lat.toFixed(7)}, ${long.toFixed(7)}</div>
+                `;
+
+                // Bind Popup to Sector Polygon
+                if (sectorLayer) {
+                    sectorLayer.bindPopup(popupContent);
+                }
+
+                // Add Circle Marker for Tower Point & Bind Popup
+                const marker = L.circleMarker(latLng, {
+                    radius: 7,
+                    fillColor: '#2563eb',
+                    color: '#ffffff',
+                    weight: 2,
+                    fillOpacity: 1
+                }).addTo(mapLayersGroup);
+                marker.bindPopup(popupContent);
+            });
+
+            // Calculate Distance Between Towers on Map (Requirement 1)
+            const summaryBadge = document.getElementById('distance-summary-badge');
+            if (points.length >= 2) {
+                let totalDist = 0;
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i].latLng;
+                    const p2 = points[i+1].latLng;
+
+                    // Draw line between consecutive towers
+                    const polyline = L.polyline([p1, p2], {
+                        color: '#0284c7',
+                        weight: 3,
+                        dashArray: '6, 6'
+                    }).addTo(mapLayersGroup);
+
+                    // Distance Calculation using Turf.js
+                    const distKm = turf.distance(
+                        turf.point([p1[1], p1[0]]),
+                        turf.point([p2[1], p2[0]]),
+                        { units: 'kilometers' }
+                    );
+                    totalDist += distKm;
+
+                    // Distance Label Placement at Midpoint
+                    const midLat = (p1[0] + p2[0]) / 2;
+                    const midLng = (p1[1] + p2[1]) / 2;
+
+                    L.marker([midLat, midLng], {
+                        icon: L.divIcon({
+                            className: 'distance-label',
+                            html: `${distKm.toFixed(2)} km`,
+                            iconSize: [60, 20],
+                            iconAnchor: [30, 10]
+                        }),
+                        interactive: false
+                    }).addTo(mapLayersGroup);
+                }
+
+                summaryBadge.innerHTML = `<i class="fa-solid fa-route mr-1"></i> Total Inter-Tower Distance: <strong>${totalDist.toFixed(2)} km</strong>`;
+                summaryBadge.classList.remove('hidden');
+            } else {
+                summaryBadge.classList.add('hidden');
+            }
+
+            if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function focusOnMap(lat, long) {
+            map.setView([lat, long], 16, { animate: true });
+            document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function addSearchRow() {
+            const container = document.getElementById('search-rows-container');
+            const newRow = document.createElement('div');
+            newRow.className = 'search-row bg-ash-50/70 dark:bg-slate-900/50 border border-ash-200 dark:border-slate-700 rounded-xl p-4 flex items-center gap-4 relative';
+            newRow.innerHTML = `
+                <div class="flex-1"><label class="block text-xs font-bold mb-1">LAC / TAC *</label><input type="text" class="lac-input w-full bg-white dark:bg-slate-800 border rounded-lg px-3 py-2 text-sm"></div>
+                <div class="flex-1"><label class="block text-xs font-bold mb-1">Cell ID *</label><input type="text" class="cell-input w-full bg-white dark:bg-slate-800 border rounded-lg px-3 py-2 text-sm"></div>
+                <button onclick="removeSearchRow(this)" class="text-red-500 mt-5"><i class="fa-solid fa-xmark text-lg"></i></button>
+            `;
+            container.appendChild(newRow);
+        }
+
+        function removeSearchRow(btn) {
+            const row = btn.closest('.search-row');
+            if (row) row.remove();
+        }
+
+        function resetSearch() {
+            document.getElementById('results-table-body').innerHTML = '';
+            document.querySelectorAll('.lac-input, .cell-input').forEach(i => i.value = '');
+            mapLayersGroup.clearLayers();
+            document.getElementById('distance-summary-badge').classList.add('hidden');
+        }
+
+        function cleanVal(str) {
+            if (str === null || str === undefined) return '';
+            return String(str).replace(/^["']|["']$/g, '').trim();
+        }
+
+        function filterTable() {
+            const query = document.getElementById('table-filter').value.toLowerCase();
+            document.querySelectorAll('#results-table-body tr').forEach(row => {
+                row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
+            });
+        }
+
+        function openModal() { document.getElementById('upload-modal').classList.remove('hidden'); }
+        function closeModal() { document.getElementById('upload-modal').classList.add('hidden'); }
+
+        // --- IMEI LOOKUP ---
+        const TAC_DATABASE = {
+            "35362842": { brand: "SAMSUNG", model: "SM-M025F/DS", name: "Galaxy M02s" },
+            "86847705": { brand: "VIVO", model: "V2420", name: "Y29 5G" },
+            "35555009": { brand: "SAMSUNG", model: "SM-A546B/DS", name: "Galaxy A54 5G" },
+            "35824011": { brand: "SAMSUNG", model: "SM-G998B/DS", name: "Galaxy S21 Ultra 5G" },
+            "35183811": { brand: "SAMSUNG", model: "SM-A125F/DS", name: "Galaxy A12" },
+            "35489011": { brand: "SAMSUNG", model: "SM-A035F/DS", name: "Galaxy A03" },
+            "35326510": { brand: "SAMSUNG", model: "SM-A525F/DS", name: "Galaxy A52" },
+            "35154711": { brand: "SAMSUNG", model: "SM-A325F/DS", name: "Galaxy A32" },
+            "35480211": { brand: "SAMSUNG", model: "SM-A225F/DS", name: "Galaxy A22" },
+            "35213611": { brand: "SAMSUNG", model: "SM-A022F/DS", name: "Galaxy A02" },
+            "35212510": { brand: "SAMSUNG", model: "SM-M317F/DS", name: "Galaxy M31s" },
+            "35791210": { brand: "SAMSUNG", model: "SM-M515F/DS", name: "Galaxy M51" },
+            "35372110": { brand: "SAMSUNG", model: "SM-A715F/DS", name: "Galaxy A71" },
+            "35612310": { brand: "SAMSUNG", model: "SM-A515F/DS", name: "Galaxy A51" },
+            "35789009": { brand: "SAMSUNG", model: "SM-A105F/DS", name: "Galaxy A10" },
+            "35890109": { brand: "SAMSUNG", model: "SM-A205F/DS", name: "Galaxy A20" },
+            "35456709": { brand: "SAMSUNG", model: "SM-A305F/DS", name: "Galaxy A30" },
+
+            "35391211": { brand: "APPLE", model: "A2633", name: "iPhone 13" },
+            "35032813": { brand: "APPLE", model: "A2894", name: "iPhone 14 Pro Max" },
+            "35412932": { brand: "APPLE", model: "A3106", name: "iPhone 15 Pro Max" },
+            "35284111": { brand: "APPLE", model: "A2643", name: "iPhone 13 Pro Max" },
+            "35678110": { brand: "APPLE", model: "A2403", name: "iPhone 12" },
+            "35301910": { brand: "APPLE", model: "A2215", name: "iPhone 11 Pro" },
+            "35671209": { brand: "APPLE", model: "A2111", name: "iPhone 11" },
+            "35721308": { brand: "APPLE", model: "A1984", name: "iPhone XR" },
+            "35871207": { brand: "APPLE", model: "A1865", name: "iPhone X" },
+
+            "86732104": { brand: "XIAOMI", model: "2201117TY", name: "Redmi Note 11" },
+            "86234105": { brand: "XIAOMI", model: "23021RAA2Y", name: "Redmi Note 12 4G" },
+            "86341206": { brand: "XIAOMI", model: "2312DRAABG", name: "Redmi Note 13 5G" },
+            "86123404": { brand: "XIAOMI", model: "M2006C3LG", name: "Redmi 9A" },
+            "86543204": { brand: "XIAOMI", model: "M2010J19SG", name: "Redmi 9T" },
+            "86981203": { brand: "XIAOMI", model: "M1908C3XG", name: "Redmi Note 8" },
+
+            "35912311": { brand: "MOTOROLA", model: "Edge 60 Fusion", name: "Moto Edge 60 Fusion" },
+            "35481210": { brand: "MOTOROLA", model: "XT2165-1", name: "Moto G22" },
+            "35128911": { brand: "MOTOROLA", model: "XT2201-1", name: "Edge 30 Pro" },
+            "35781209": { brand: "MOTOROLA", model: "XT2091-3", name: "Moto G9 Power" },
+
+            "35481208": { brand: "NOKIA", model: "TA-1053", name: "Nokia 5" },
+            "35891209": { brand: "NOKIA", model: "TA-1205", name: "Nokia C1" },
+            "35123409": { brand: "NOKIA", model: "TA-1304", name: "Nokia 105 (2019)" },
+            "35678907": { brand: "NOKIA", model: "TA-1033", name: "Nokia 3" },
+
+            "86481205": { brand: "REALME", model: "RMX3231", name: "Realme C11 2021" },
+            "86321905": { brand: "REALME", model: "RMX3521", name: "Realme 9i" },
+            "86123904": { brand: "REALME", model: "RMX2020", name: "Realme C3" },
+
+            "86412905": { brand: "OPPO", model: "CPH2387", name: "OPPO A57" },
+            "86912304": { brand: "OPPO", model: "CPH2269", name: "OPPO A16" },
+
+            "86214905": { brand: "INFINIX", model: "X669", name: "Infinix Smart 7" },
+            "86781205": { brand: "INFINIX", model: "X6816D", name: "Infinix Hot 12 Play" },
+
+            "86312405": { brand: "TECNO", model: "BF7", name: "Tecno Pop 7" },
+            "86901205": { brand: "TECNO", model: "KG5p", name: "Tecno Spark 8C" }
+        };
+
+        function checkIMEI() {
+            const rawVal = document.getElementById('imei-input').value.trim();
+            const val = rawVal.replace(/[^0-9]/g, ''); // strip spaces/dashes, keep digits only
+            if (val.length < 8) return alert('Enter at least 8 digits of IMEI (TAC code).');
+            const tac8 = val.substring(0, 8);
+            const tac6 = val.substring(0, 6);
+            const resContainer = document.getElementById('imei-results-container');
+            const resImei = document.getElementById('res-imei');
+            const resBrand = document.getElementById('res-brand');
+            const resModel = document.getElementById('res-model');
+            const resModelName = document.getElementById('res-model-name');
+
+            resImei.innerText = val;
+            const info = TAC_DATABASE[tac8] || TAC_DATABASE[tac6];
+            if (info) {
+                resBrand.innerText = info.brand;
+                resModel.innerText = info.model;
+                resModelName.innerText = info.name;
+            } else {
+                resBrand.innerText = "Generic GSM";
+                resModel.innerText = "TAC: " + tac8;
+                resModelName.innerText = "Device Model Unknown";
+            }
+            resContainer.classList.remove('hidden');
+        }
+
+        function clearIMEI() {
+            document.getElementById('imei-input').value = '';
+            document.getElementById('imei-results-container').classList.add('hidden');
+        }
+
+        function openExternalIMEI() {
+            const brand = document.getElementById('res-brand').innerText.trim();
+            const model = document.getElementById('res-model').innerText.trim();
+            let query;
+            if (brand && brand !== 'Generic GSM' && model && !model.startsWith('TAC:')) {
+                query = `${brand} ${model} specifications`;
+            } else {
+                const val = document.getElementById('imei-input').value.trim();
+                query = `IMEI TAC ${val.substring(0, 8)}`;
+            }
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+        }
+
+        function copyIMEI() {
+            const val = document.getElementById('res-imei').innerText;
+            navigator.clipboard.writeText(val);
+            alert('IMEI copied to clipboard.');
+        }
+
+        // --- LRL / LCL ANALYZER ---
+        // Parses loosely-formatted LRL/LCL text blocks (operator location-request replies).
+        // Looks for: a bracketed "[LAC CellID]" pair, a 15-digit IMEI, a 15-digit IMSI
+        // (MCC 470 = Bangladesh) with an operator tag like [GP]/[BL]/[RB]/[TT], an 11-digit
+        // BD phone number, and treats any remaining free-text line as the address.
+        let lrlLastMatch = null;
+        let lrlLastMeta = null;
+
+        function processLrlLcl() {
+            const raw = document.getElementById('lrl-input').value.trim();
+            if (!raw) return alert('Paste some LRL/LCL text first.');
+
+            const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+
+            let lac = null, cellId = null, imei = null, imsi = null, phone = null, addressLines = [];
+            const opTagMap = { gp: 'Grameenphone', bl: 'Banglalink', rb: 'Robi', tt: 'Teletalk' };
+            let imsiOperatorTag = null;
+
+            lines.forEach(line => {
+                // [LAC CellID] bracket pair
+                const bracketMatch = line.match(/\[\s*(\d{3,6})[\s,]+(\d{3,10})\s*\]/);
+                if (bracketMatch && !lac) { lac = bracketMatch[1]; cellId = bracketMatch[2]; return; }
+
+                // Operator tag like [GP], [BL], [RB], [TT]
+                const opTagMatch = line.match(/\[(gp|bl|rb|tt)\]/i);
+                if (opTagMatch) imsiOperatorTag = opTagMap[opTagMatch[1].toLowerCase()] || null;
+
+                // All-digit lines: classify by length/prefix
+                const digitsOnly = line.replace(/[^0-9]/g, '');
+                if (/^\d{14,16}$/.test(line.replace(/\s/g, ''))) {
+                    const cleaned = line.replace(/\s/g, '').replace(/\[.*?\]/g, '');
+                    if (cleaned.startsWith('470') && cleaned.length === 15) { if (!imsi) imsi = cleaned; return; }
+                    if (!imei) { imei = cleaned; return; }
+                }
+                const bdPhoneMatch = line.match(/\b(01\d{9})\b/);
+                if (bdPhoneMatch && !phone) { phone = bdPhoneMatch[1]; return; }
+                const bdPhoneWithCountryMatch = line.match(/\b(880\s?1\d{9})\b/);
+                if (bdPhoneWithCountryMatch && !phone) { phone = '0' + bdPhoneWithCountryMatch[1].replace(/^880\s?/, ''); return; }
+
+                // Anything else with letters is treated as address text
+                if (/[a-zA-Z]/.test(line) && !opTagMatch) addressLines.push(line);
+            });
+
+            if (!lac && !cellId && !imei && !imsi && !phone && addressLines.length === 0) {
+                return alert('Could not find any recognizable LAC/Cell, IMEI, IMSI, phone number, or address in this text.');
+            }
+
+            // Look up device info from IMEI
+            let deviceInfo = null;
+            if (imei) {
+                const tac8 = imei.substring(0, 8);
+                const tac6 = imei.substring(0, 6);
+                deviceInfo = TAC_DATABASE[tac8] || TAC_DATABASE[tac6] || null;
+            }
+
+            // Look up the tower in the LAC/Cell database, if we found a LAC/Cell pair
+            let towerMatch = null;
+            if (lac && cellId) {
+                const key = String(lac).trim().toLowerCase() + '|' + String(cellId).trim().toLowerCase();
+                towerMatch = database.find(t => (String(t.lac).trim().toLowerCase() + '|' + String(t.cellId).trim().toLowerCase()) === key) || null;
+            }
+
+            const operatorFromImsi = imsiOperatorTag || (phone ? detectOperatorFromNumber(phone) : null);
+
+            // Render result card
+            document.getElementById('lrl-results-card').classList.remove('hidden');
+            document.getElementById('lrl-res-phone').innerText = phone || 'N/A';
+            document.getElementById('lrl-res-datetime').innerText = new Date().toLocaleString();
+            document.getElementById('lrl-res-imei').innerText = imei || 'N/A';
+            document.getElementById('lrl-res-brandmodel').innerText = deviceInfo
+                ? `${deviceInfo.brand} - ${deviceInfo.model}${deviceInfo.name && deviceInfo.name !== deviceInfo.model ? ' (' + deviceInfo.name + ')' : ''}`
+                : (imei ? 'Unknown device' : 'N/A');
+            document.getElementById('lrl-res-address').innerText = towerMatch && towerMatch.address
+                ? towerMatch.address
+                : (addressLines.join(', ') || 'N/A');
+
+            // Store for the "View on Map" button
+            lrlLastMatch = towerMatch;
+            lrlLastMeta = {
+                lac: lac || (towerMatch ? towerMatch.lac : 'N/A'),
+                cellId: cellId || (towerMatch ? towerMatch.cellId : 'N/A'),
+                visits: 1,
+                firstSeen: null,
+                lastSeen: null,
+                activeNumbers: phone ? [phone] : []
+            };
+        }
+
+        function openLrlMapModal() {
+            if (!lrlLastMeta) return alert('Process some LRL/LCL text first.');
+            openTowerMapModal(lrlLastMatch, lrlLastMeta);
+        }
+
+        function resetLrlLcl() {
+            document.getElementById('lrl-input').value = '';
+            document.getElementById('lrl-results-card').classList.add('hidden');
+            lrlLastMatch = null;
+            lrlLastMeta = null;
+        }
+
+        // Initialize application on load
+        // --- REAL TAC DATABASE LOADER ---
+        // The TAC_DATABASE object above only has ~50 sample entries. This loads the ~255,000-entry
+        // open database directly from GitHub (fast, free, and doesn't use up YOUR Netlify bandwidth
+        // or storage quota - GitHub's CDN serves it instead). If that ever fails, it falls back to
+        // a tac_database.csv file if you've placed one next to this HTML file on your own server.
+        async function loadTacDatabase() {
+            const sources = [
+                'https://raw.githubusercontent.com/MoazEb/tac-database/main/tac_full.csv',
+                'tac_database.csv'
+            ];
+            for (const url of sources) {
+                try {
+                    const resp = await fetch(url);
+                    if (!resp.ok) continue;
+                    const buf = await resp.arrayBuffer();
+                    const data = new Uint8Array(buf);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+                    if (jsonData.length < 2) continue;
+
+                    const headers = jsonData[0].map(h => String(h).toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+                    const idxTac = headers.findIndex(h => h === 'tac' || h.includes('tac'));
+                    const idxBrand = headers.findIndex(h => h.includes('manufactur') || h.includes('brand') || h.includes('vendor'));
+                    const idxMarketing = headers.findIndex(h => h.includes('marketing') || h.includes('modelname'));
+                    const idxModel = headers.findIndex(h => h.includes('model') && !h.includes('name'));
+                    const idxSpecs = headers.findIndex(h => h.includes('specs') || h.includes('spec'));
+
+                    if (idxTac === -1) {
+                        console.warn('Could not find a TAC column in ' + url);
+                        continue;
+                    }
+
+                    let count = 0;
+                    for (let i = 1; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (!row || row.length === 0) continue;
+                        const tacRaw = String(row[idxTac] || '').trim().replace(/[^0-9]/g, '');
+                        if (tacRaw.length < 6) continue;
+
+                        const brand = idxBrand !== -1 ? String(row[idxBrand] || '').trim() : '';
+                        const modelCode = idxModel !== -1 ? String(row[idxModel] || '').trim() : '';
+                        const marketingName = idxMarketing !== -1 ? String(row[idxMarketing] || '').trim() : '';
+                        const specs = idxSpecs !== -1 ? String(row[idxSpecs] || '').trim() : '';
+
+                        // The MoazEb dataset packs "Full model name, internal model number, variant, year"
+                        // into one "specs" field. Split it so Model (marketing name) and Model Name
+                        // (internal/technical number) show different things, like bdcdr does.
+                        let specsModel = '', specsModelName = '';
+                        if (specs) {
+                            const parts = specs.split(',').map(p => p.trim()).filter(Boolean);
+                            specsModel = parts[0] || '';
+                            specsModelName = parts.length > 1 ? parts.slice(1).join(', ') : '';
+                        }
+
+                        TAC_DATABASE[tacRaw] = {
+                            brand: brand || 'Unknown',
+                            model: marketingName || modelCode || specsModel || 'Unknown',
+                            name: modelCode || specsModelName || marketingName || specsModel || 'Unknown'
+                        };
+                        count++;
+                    }
+                    console.log('Loaded ' + count.toLocaleString() + ' TAC records from ' + url);
+                    return; // success - no need to try the next source
+                } catch (err) {
+                    console.error('Error loading TAC database from ' + url, err);
+                }
+            }
+            console.warn('Could not load any TAC database - IMEI lookup will only work for the ~50 built-in sample devices.');
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            initMap();
+            initDB().then(() => loadDatabaseFromServer());
+            loadTacDatabase();
+        });
+    </script>
+    </div> <!-- /#app-shell -->
+
+    <!-- ===================== FIREBASE AUTHENTICATION ===================== -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script>
+        // ============================================================
+        // STEP A: Paste your Firebase project's config here (from
+        // Firebase Console -> Project settings -> Your apps -> SDK setup).
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7y0dwyHvRGC2pDOfNL75R5PqdfeHluhI",
+            authDomain: "cellverdict.firebaseapp.com",
+            projectId: "cellverdict",
+            storageBucket: "cellverdict.firebasestorage.app",
+            messagingSenderId: "127741335953",
+            appId: "1:127741335953:web:91bfeee4039e44034da230"
+        };
+
+        // ============================================================
+        // STEP B: Put YOUR OWN email address here. Only this exact
+        // email will see the "Admin" button/panel after logging in.
+        // Every other email you create in Firebase can log in and use
+        // the tool, but will NOT see the Admin panel.
+        // ============================================================
+        const ADMIN_EMAIL = "tilokbarua.news@gmail.com";
+        window.firebaseConfig = firebaseConfig; // expose to the main app script for the Admin "Add User" feature
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        const loginOverlay = document.getElementById('login-overlay');
+        const appShell = document.getElementById('app-shell');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        const loginEmailInput = document.getElementById('login-email');
+        const loginPassInput = document.getElementById('login-password');
+        const loginSubmitBtn = document.getElementById('login-submit-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const loggedInEmailLabel = document.getElementById('logged-in-email');
+
+        auth.onAuthStateChanged(function (user) {
+            if (user) {
+                // Signed in: reveal the app, hide the login form
+                loginOverlay.style.display = 'none';
+                appShell.style.display = 'contents';
+                if (loggedInEmailLabel) loggedInEmailLabel.innerText = user.email;
+
+                // Only the designated admin email gets the Admin button
+                const navUsers = document.getElementById('nav-users');
+                if (navUsers) {
+                    navUsers.style.display = (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) ? '' : 'none';
+                }
+            } else {
+                // Signed out: show the login form, hide the app
+                loginOverlay.style.display = 'flex';
+                appShell.style.display = 'none';
+            }
+        });
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                loginError.classList.add('hidden');
+                loginSubmitBtn.disabled = true;
+                loginSubmitBtn.innerText = 'Logging in...';
+                const email = loginEmailInput.value.trim();
+                const pass = loginPassInput.value;
+                auth.signInWithEmailAndPassword(email, pass)
+                    .catch(function (err) {
+                        console.error('Firebase login error:', err.code, err.message);
+                        loginError.innerText = 'ভুল ইমেইল বা পাসওয়ার্ড। (' + err.code + ')';
+                        loginError.classList.remove('hidden');
+                    })
+                    .finally(function () {
+                        loginSubmitBtn.disabled = false;
+                        loginSubmitBtn.innerText = 'Login';
+                    });
+            });
+        }
+
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', function () {
+                auth.signOut();
+            });
+        }
+    </script>
+</body>
+</html>
